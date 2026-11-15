@@ -6,7 +6,7 @@
 **Project:** PulseWatch  
 **Backend:** NestJS  
 **Language:** TypeScript  
-**Database:** Neon PostgreSQL  
+**Database:** Supabse PostgreSQL  
 **ORM:** Prisma  
 **API Style:** REST
 

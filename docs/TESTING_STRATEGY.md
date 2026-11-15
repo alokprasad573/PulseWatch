@@ -1116,7 +1116,7 @@ Purpose:
 Infrastructure:
 
 - Local Redis.
-- Dedicated development PostgreSQL or Neon development database.
+- Dedicated development PostgreSQL or Supabase development database.
 - Local test HTTP server.
 - Fake email adapter.
 

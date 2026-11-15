@@ -17,7 +17,7 @@ It covers:
 - Application configuration.
 - Frontend configuration.
 - Backend API configuration.
-- Neon PostgreSQL configuration.
+- Supabase PostgreSQL configuration.
 - Prisma configuration.
 - Redis and BullMQ configuration.
 - Authentication and security secrets.
@@ -172,8 +172,8 @@ NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1
 # DATABASE
 # ==========================================
 
-DATABASE_URL="YOUR_NEON_POOLED_CONNECTION_URL"
-DIRECT_URL="YOUR_NEON_DIRECT_CONNECTION_URL"
+DATABASE_URL="YOUR_Supabase_POOLED_CONNECTION_URL"
+DIRECT_URL="YOUR_Supabase_DIRECT_CONNECTION_URL"
 
 # ==========================================
 # REDIS
@@ -359,7 +359,7 @@ Important: Next.js public environment variables are generally embedded into brow
 Database provider:
 
 ```text
-Neon PostgreSQL
+Supabase PostgreSQL
 ```
 
 ORM:
@@ -372,14 +372,14 @@ Prisma
 
 | Variable | Required | Secret | Description |
 |---|---|---|---|
-| DATABASE_URL | Yes | Yes | Neon pooled connection |
-| DIRECT_URL | Yes | Yes | Neon direct connection |
+| DATABASE_URL | Yes | Yes | Supabase pooled connection |
+| DIRECT_URL | Yes | Yes | Supabase direct connection |
 
 Example:
 
 ```env
-DATABASE_URL="YOUR_NEON_POOLED_CONNECTION_URL"
-DIRECT_URL="YOUR_NEON_DIRECT_CONNECTION_URL"
+DATABASE_URL="YOUR_Supabase_POOLED_CONNECTION_URL"
+DIRECT_URL="YOUR_Supabase_DIRECT_CONNECTION_URL"
 ```
 
 ## 7.2 DATABASE_URL
@@ -392,7 +392,7 @@ Purpose:
 - Scheduler database queries.
 - Transactional application operations.
 
-Use the Neon pooled connection URL when appropriate for the runtime's connection pattern.
+Use the Supabase pooled connection URL when appropriate for the runtime's connection pattern.
 
 ## 7.3 DIRECT_URL
 
@@ -1230,8 +1230,8 @@ If a secret is accidentally committed, removing it from the latest commit is not
 
 ## Database
 
-- [ ] DATABASE_URL uses the intended Neon pooled connection.
-- [ ] DIRECT_URL uses the intended Neon direct connection.
+- [ ] DATABASE_URL uses the intended Supabase pooled connection.
+- [ ] DIRECT_URL uses the intended Supabase direct connection.
 - [ ] Database connections use TLS.
 - [ ] Production credentials are separate from development.
 - [ ] Database permissions are restricted.

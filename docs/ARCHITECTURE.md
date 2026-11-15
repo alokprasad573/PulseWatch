@@ -135,7 +135,7 @@ flowchart TB
     end
 
     subgraph Storage
-        DB[(Neon PostgreSQL)]
+        DB[(Supabase PostgreSQL)]
     end
 
     subgraph External

@@ -52,7 +52,7 @@ Build a production-oriented API and website monitoring platform that allows user
 | Language | TypeScript |
 | API | REST |
 | Database | PostgreSQL |
-| Database Hosting | Neon |
+| Database Hosting | Supabase |
 | ORM | Prisma |
 | Queue | BullMQ |
 | Queue Storage | Redis |
@@ -186,7 +186,7 @@ The exact workspace scripts and package boundaries should be finalized during Ph
 
 #### 1.3 Infrastructure Setup
 
-- [ ] Create Neon PostgreSQL project.
+- [ ] Create Supabase PostgreSQL project.
 - [ ] Configure pooled `DATABASE_URL`.
 - [ ] Configure direct `DIRECT_URL`.
 - [ ] Create Redis instance.
@@ -232,7 +232,7 @@ The exact workspace scripts and package boundaries should be finalized during Ph
 #### 2.1 Prisma Setup
 
 - [ ] Configure Prisma using a version-consistent setup.
-- [ ] Configure Neon connection strings.
+- [ ] Configure Supabase connection strings.
 - [ ] Create initial Prisma schema.
 - [ ] Configure database migrations.
 - [ ] Generate Prisma Client.
@@ -290,7 +290,7 @@ Implement:
 
 ### Acceptance Criteria
 
-- Migrations execute successfully against Neon.
+- Migrations execute successfully against Supabase.
 - Prisma Client generates successfully.
 - All relationships work.
 - Unique constraints prevent duplicate records.
@@ -972,7 +972,7 @@ Use k6 to evaluate:
 
 #### 12.3 Database
 
-- [ ] Configure Neon production database.
+- [ ] Configure Supabase production database.
 - [ ] Configure pooled connection URL.
 - [ ] Configure direct migration URL.
 - [ ] Run production migrations.
@@ -1105,7 +1105,7 @@ Some work can proceed in parallel once its dependencies are stable. For example,
 
 | Milestone | Completion Criteria |
 |---|---|
-| M1 — Foundation | Monorepo, apps, Neon, Redis |
+| M1 — Foundation | Monorepo, apps, Supabase, Redis |
 | M2 — Database | Prisma schema and migrations |
 | M3 — Authentication | Registration, login, sessions |
 | M4 — Monitor API | Complete monitor CRUD |
@@ -1231,7 +1231,7 @@ For critical infrastructure features, such as scheduling, monitoring execution, 
 | Duplicate incidents | High | Transactional state transitions and unique active incident constraint |
 | Lost notifications | High | Transactional outbox and retryable dispatcher |
 | Redis downtime | High | Persist scheduling state in PostgreSQL and safely redispatch |
-| Database connection exhaustion | High | Neon pooling, bounded concurrency, connection monitoring |
+| Database connection exhaustion | High | Supabase pooling, bounded concurrency, connection monitoring |
 | Scheduler downtime | High | Lease recovery and restart-safe scheduling |
 | Worker overload | High | Bounded concurrency and queue backpressure |
 | Slow analytics queries | Medium | Indexing, aggregation tables, retention policies |
@@ -1316,7 +1316,7 @@ Start with a reliable modular monorepo and independently deployable processes.
 
 ## Infrastructure
 
-- [ ] Neon PostgreSQL is configured.
+- [ ] Supabase PostgreSQL is configured.
 - [ ] Redis is configured.
 - [ ] API is deployed.
 - [ ] Scheduler is deployed.

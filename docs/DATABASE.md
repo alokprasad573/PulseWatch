@@ -4,7 +4,7 @@
 **Version:** 1.0  
 **Status:** Draft — Database Design  
 **Project:** PulseWatch  
-**Database:** Neon PostgreSQL  
+**Database:** Supabase PostgreSQL  
 **ORM:** Prisma
 
 ---
@@ -13,7 +13,7 @@
 
 PulseWatch uses PostgreSQL as its primary relational database.
 
-The database is hosted on Neon and accessed through Prisma ORM.
+The database is hosted on Supabase and accessed through Prisma ORM.
 
 PostgreSQL is the permanent source of truth for:
 
@@ -36,11 +36,11 @@ Redis is used by BullMQ for asynchronous job processing. It is not the permanent
 | Component | Technology | Responsibility |
 |---|---|---|
 | Database | PostgreSQL | Persistent data storage |
-| Hosting | Neon | Managed PostgreSQL |
+| Hosting | Supabase | Managed PostgreSQL |
 | ORM | Prisma | Database access |
 | Migrations | Prisma Migrate | Schema versioning |
-| Connection Pooling | Neon Pooled Connection | Application connections |
-| Direct Connection | Neon Direct Connection | Migrations and direct operations |
+| Connection Pooling | Supabase Pooled Connection | Application connections |
+| Direct Connection | Supabase Direct Connection | Migrations and direct operations |
 | Queue | Redis | Background job coordination |
 
 ## 1.2 Database Design Principles
@@ -1582,7 +1582,7 @@ pnpm prisma studio
 - Avoid creating one Prisma Client per request or job.
 - Configure appropriate connection pool limits.
 - Account for the combined connection usage of API, scheduler, and workers.
-- Use Neon pooling where appropriate.
+- Use Supabase pooling where appropriate.
 
 ## 16.3 Monitoring History
 
@@ -1603,7 +1603,7 @@ Use:
 
 Requirements:
 
-- Use Neon-supported backup and recovery capabilities.
+- Use Supabase-supported backup and recovery capabilities.
 - Configure appropriate recovery objectives.
 - Test database restoration procedures.
 - Preserve migration history.

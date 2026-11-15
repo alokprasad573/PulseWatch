@@ -61,7 +61,7 @@ Primary characteristics:
 - Purple and violet themes.
 - Electric blue accents.
 - Bright green accents.
-- Neon colors.
+- Supabase colors.
 - Excessive gradients.
 - Glassmorphism everywhere.
 - Excessively rounded cards.

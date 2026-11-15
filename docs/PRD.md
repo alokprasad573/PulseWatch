@@ -772,7 +772,7 @@ Responsibilities:
 
 | Component | Technology |
 |---|---|
-| Database | Neon PostgreSQL |
+| Database | Supabase PostgreSQL |
 | ORM | Prisma |
 | Queue | BullMQ |
 | Cache / Queue Backend | Redis |
@@ -908,7 +908,7 @@ These are initial engineering targets, not claims of achieved production perform
 - Configure Next.js.
 - Configure NestJS.
 - Configure Prisma.
-- Connect Neon PostgreSQL.
+- Connect Supabase PostgreSQL.
 - Configure Redis.
 - Configure Docker.
 

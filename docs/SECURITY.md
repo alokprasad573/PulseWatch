@@ -623,9 +623,9 @@ Return stable, documented error codes.
 
 # 7. Database Security
 
-## 7.1 Neon PostgreSQL
+## 7.1 Supabase PostgreSQL
 
-PulseWatch uses Neon as its managed PostgreSQL provider.
+PulseWatch uses Supabase as its managed PostgreSQL provider.
 
 Security requirements:
 
@@ -641,8 +641,8 @@ Security requirements:
 Environment variables:
 
 ```env
-DATABASE_URL="NEON_POOLED_CONNECTION_URL"
-DIRECT_URL="NEON_DIRECT_CONNECTION_URL"
+DATABASE_URL="Supabase_POOLED_CONNECTION_URL"
+DIRECT_URL="Supabase_DIRECT_CONNECTION_URL"
 ```
 
 These values must never be printed in application logs.
@@ -1402,7 +1402,7 @@ For monitoring execution, security completion additionally requires:
 
 ## Infrastructure
 
-- [ ] Neon connections use TLS.
+- [ ] Supabase connections use TLS.
 - [ ] Redis is private and authenticated.
 - [ ] Secrets are stored securely.
 - [ ] Containers run with least privilege.
