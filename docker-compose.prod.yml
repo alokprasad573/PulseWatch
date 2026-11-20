@@ -1,0 +1,112 @@
+services:
+  # Redis Queue Broker
+  redis:
+    image: redis:7-alpine
+    container_name: pulsewatch-redis-prod
+    restart: always
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_prod_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pulsewatch-network
+
+  # NestJS REST API
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: pulsewatch-api-prod
+    restart: always
+    ports:
+      - "${HOST_API_PORT:-4001}:4000"
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - DATABASE_URL=${DATABASE_URL}
+      - DIRECT_URL=${DIRECT_URL}
+      - REDIS_URL=redis://redis:6379
+      - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
+      - REFRESH_TOKEN_PEPPER=${REFRESH_TOKEN_PEPPER}
+      - WEB_ORIGIN=${WEB_ORIGIN:-http://localhost:3001}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - pulsewatch-network
+
+  # Monitoring Scheduler
+  scheduler:
+    build:
+      context: .
+      dockerfile: apps/scheduler/Dockerfile
+    container_name: pulsewatch-scheduler-prod
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379
+      - SCHEDULER_POLL_INTERVAL_MS=5000
+      - SCHEDULER_BATCH_SIZE=500
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    networks:
+      - pulsewatch-network
+
+  # Monitoring Execution Worker
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: pulsewatch-worker-prod
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379
+      - MONITOR_WORKER_CONCURRENCY=10
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    networks:
+      - pulsewatch-network
+
+  # Next.js Web Frontend
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4001/api/v1}
+    container_name: pulsewatch-web-prod
+    restart: always
+    ports:
+      - "${HOST_WEB_PORT:-3001}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4001/api/v1}
+    depends_on:
+      api:
+        condition: service_started
+    networks:
+      - pulsewatch-network
+
+networks:
+  pulsewatch-network:
+    driver: bridge
+
+volumes:
+  redis_prod_data:
