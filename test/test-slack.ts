@@ -1,5 +1,5 @@
 import { getEnv } from '@pulsewatch/config';
-import { sendSlackAlert } from '../apps/worker/src/slack';
+import { sendSlackAlert } from '../services/worker/src/slack';
 
 async function main() {
   console.log('====================================================');

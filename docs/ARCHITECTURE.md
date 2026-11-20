@@ -1,19 +1,19 @@
 # PulseWatch — System Architecture & Design Specification
 
 **Document:** `docs/Architecture.md`  
-**Version:** 1.0.0  
+**Version:** 2.0.0  
 **Status:** Production / Implemented  
-**Architecture Style:** Distributed Microservices Monorepo + Asynchronous Event-Driven Processing  
-**Repository Tooling:** pnpm Workspaces + Turborepo
+**Architecture Style:** Modular Monorepo + Express.js MVC Backend + Next.js App Router Frontend + Distributed Probing Fleet  
+**Repository Tooling:** pnpm Workspaces + Turborepo + Docker Compose
 
 ---
 
 ## 1. System Architecture Overview
 
-PulseWatch is an enterprise-grade API monitoring, uptime verification, and incident management platform. It is engineered to decouple high-frequency scheduling and probe execution from user-facing API interactions.
+PulseWatch is an enterprise-grade API monitoring, uptime verification, and incident management platform. Following a complete architectural migration, PulseWatch is structured as a production-ready monorepo separating concerns into a **Next.js frontend**, an **Express.js MVC backend**, independent **background scheduling and probe execution services**, and **shared workspace packages**.
 
-### 1.1 Core Architecture Highlights
-- **Distributed Microservices Topology**: Separates user requests (`apps/api`), web interface (`apps/web`), task scheduling (`apps/scheduler`), and distributed probing (`apps/worker`).
+### 1.1 Architectural Highlights
+- **Clear Separation of Concerns (MVC)**: The backend is organized around Model-View-Controller principles with decoupled **Controllers** (HTTP handling & status codes), **Services** (domain logic & orchestration), and **Repositories** (Prisma database data-access layer).
 - **Zero-Tolerance SSRF & DNS Rebinding Shield**: Probing engine resolves DNS hostnames before socket connection, blocks private/cloud-metadata IPs (RFC 1918, RFC 4193, `169.254.169.254`), and strictly binds raw sockets to the verified IP to prevent Time-of-Check to Time-of-Use (TOCTOU) DNS rebinding attacks.
 - **Microsecond Precision Network Timers**: Employs `process.hrtime.bigint()` to capture network round-trips with sub-millisecond precision.
 - **Hysteresis Incident State Machine**: Eliminates alert fatigue and transient false positives via 3-strike failure threshold for outages and 2-strike consecutive success threshold for automated recovery.
@@ -28,21 +28,21 @@ PulseWatch is an enterprise-grade API monitoring, uptime verification, and incid
 flowchart TD
     subgraph ClientLayer ["Client & Frontend Layer"]
         BrowserUser["Engineer / Operator Browser"]
-        NextWeb["Next.js 14 Web UI (Port 3001)"]
+        NextWeb["Next.js 14 Web UI (Port 3000)\nfrontend/"]
     end
 
-    subgraph ApiGatewayLayer ["API Gateway & Core Business Logic"]
-        NestApi["NestJS REST API (Port 4001)"]
+    subgraph ApiGatewayLayer ["Backend API Gateway (Express MVC)"]
+        ExpressApi["Express.js REST API (Port 4001)\nbackend/"]
     end
 
     subgraph DataStorageLayer ["Data Persistence & Message Broker"]
-        SupabasePg[("Supabase PostgreSQL (Prisma ORM)")]
+        PostgresDB[("PostgreSQL 15+ (Prisma ORM)\npackages/database/")]
         RedisQueue[("Redis 7 (BullMQ Queue Broker)")]
     end
 
     subgraph BackgroundExecutionLayer ["Autonomous Execution & Probing Fleet"]
-        SchedulerDaemon["Scheduler Daemon (5s Atomic Leases)"]
-        WorkerProber["Worker Engine (SSRF Shield + HTTP Prober)"]
+        SchedulerDaemon["Scheduler Daemon (5s Atomic Leases)\nservices/scheduler/"]
+        WorkerProber["Worker Engine (SSRF Shield + HTTP Prober)\nservices/worker/"]
     end
 
     subgraph ExternalTargetsLayer ["External Targets & Alert Destinations"]
@@ -51,115 +51,127 @@ flowchart TD
     end
 
     BrowserUser -->|HTTPS| NextWeb
-    NextWeb -->|REST API / JWT| NestApi
-    NestApi -->|Prisma Pooled Client| SupabasePg
-    NestApi -->|Health Probes| RedisQueue
+    NextWeb -->|REST API / JWT| ExpressApi
+    ExpressApi -->|Prisma Client| PostgresDB
+    ExpressApi -->|Health Probes| RedisQueue
 
-    SchedulerDaemon -->|Lease Due Monitors| SupabasePg
+    SchedulerDaemon -->|Lease Due Monitors| PostgresDB
     SchedulerDaemon -->|Enqueue Check Jobs| RedisQueue
 
     WorkerProber -->|Pull Check Jobs| RedisQueue
     WorkerProber -->|Execute Probe with IP Pinning| ExternalApis
-    WorkerProber -->|Persist Check & Evaluate State| SupabasePg
+    WorkerProber -->|Persist Check & Evaluate State| PostgresDB
     WorkerProber -->|Dispatch Block Kit Alert| SlackApi
 ```
 
 ---
 
-## 3. Technology Stack & Workspace Structure
+## 3. Monorepo Directory Organization
 
-### 3.1 Technology Matrix
-| Layer | Technologies | Purpose |
-| :--- | :--- | :--- |
-| **Monorepo** | pnpm workspaces, Turborepo | Dependency management and build orchestration. |
-| **Frontend** | Next.js 14 (App Router), React 18, Tailwind CSS, Recharts | Interactive dashboard, real-time metrics, incident timelines. |
-| **Backend API** | NestJS 10, Express, Passport, class-validator, Argon2id | REST API, tenant isolation, session security, input validation. |
-| **Database** | PostgreSQL 15+ (Supabase), Prisma ORM | Relational persistence, connection pooling (PgBouncer port 6543). |
-| **Message Queue** | Redis 7, BullMQ | Asynchronous job distribution between scheduler and workers. |
-| **Scheduler** | Node.js daemon, Prisma Client | 5-second tick loop, atomic monitor occurrence leasing. |
-| **Worker** | Node.js, BullMQ Worker, native `http`/`https` sockets | SSRF defense, socket IP pinning, state machine, Slack alerting. |
-
-### 3.2 Monorepo Directory Organization
 ```
-Api_Monitoring_Platform/
-├── apps/
-│   ├── api/                  # NestJS 10 REST API microservice
-│   │   ├── src/
-│   │   │   ├── common/       # Decorators, filters, guards, interceptors
-│   │   │   ├── modules/      # Auth, Monitors, Incidents, Dashboard, Health
-│   │   │   ├── app.module.ts
-│   │   │   └── main.ts
-│   ├── scheduler/            # Node.js background scheduler daemon
-│   │   └── src/index.ts      # 5-second polling tick loop with atomic leases
-│   ├── web/                  # Next.js 14 App Router frontend
-│   │   ├── src/app/          # /dashboard, /monitors, /incidents, /login, /register
-│   │   └── src/components/   # Recharts charts, tables, navigation, modals
+PulseWatch/
+├── frontend/                 # Next.js 14 App Router client application
+│   ├── src/
+│   │   ├── app/              # Routes: /dashboard, /monitors, /incidents, /login, /register
+│   │   ├── components/       # UI components, Recharts visualizations, navigation
+│   │   ├── context/          # Client state & AuthProvider
+│   │   ├── hooks/            # Custom React hooks
+│   │   ├── lib/              # Centralized API client & utilities
+│   │   ├── services/         # Frontend API integration services
+│   │   └── types/            # Frontend TypeScript types
+│   ├── public/               # Static assets & icons
+│   ├── Dockerfile            # Multi-stage production container
+│   ├── package.json          # Dependencies: @pulsewatch/shared, next, react, recharts
+│   └── tsconfig.json
+│
+├── backend/                  # Express.js REST API with MVC Architecture
+│   ├── src/
+│   │   ├── config/           # Environment configuration via @pulsewatch/config
+│   │   ├── controllers/      # HTTP request/response handlers (Auth, Monitor, Incident, Dashboard, Health)
+│   │   ├── services/         # Domain business rules & repository coordination
+│   │   ├── repositories/     # Prisma data-access abstraction layer
+│   │   ├── models/           # Domain models & entities
+│   │   ├── routes/           # Express modular routers (/auth, /monitors, /incidents, /dashboard, /health)
+│   │   ├── middlewares/      # JWT auth, Zod validation, error handling, rate limiting, logging
+│   │   ├── validators/       # Zod schemas for request validation
+│   │   ├── utils/            # JWT helpers, Argon2id, logger, custom error classes, response formatters
+│   │   ├── types/            # AuthenticatedRequest and backend types
+│   │   ├── app.ts            # Express app configuration & middleware pipeline
+│   │   └── server.ts         # Server bootstrap, DB healthcheck, graceful shutdown
+│   ├── Dockerfile            # Multi-stage production container
+│   ├── package.json          # Dependencies: express, helmet, cors, argon2, jsonwebtoken, zod
+│   └── tsconfig.json
+│
+├── services/                 # Distributed background daemons
+│   ├── scheduler/            # 5-second atomic lease scheduling daemon
+│   │   ├── src/index.ts      # Lease polling & BullMQ job dispatch
+│   │   └── Dockerfile
 │   └── worker/               # Distributed probe execution worker
 │       ├── src/
-│       │   ├── executor.ts   # Socket-level prober with SSRF prevention & IP pinning
+│       │   ├── executor.ts   # Raw socket HTTP client with microsecond timing
+│       │   ├── ssrf.ts       # SSRF pre-flight DNS validation & IP pinning
 │       │   ├── incidents.ts  # 3-strike outage / 2-strike recovery state machine
-│       │   ├── slack.ts      # Slack Block Kit card builder & webhook dispatcher
-│       │   └── index.ts      # BullMQ worker process entry point
-├── packages/
-│   ├── config/               # Zod-validated environment configuration
-│   ├── database/             # Prisma schema, migrations, and database client
-│   └── shared/               # Shared TypeScript types, enums, DTOs, and constants
-├── docs/                     # Production documentation
+│       │   ├── slack.ts      # Slack Block Kit notification dispatcher
+│       │   └── index.ts      # BullMQ worker consumer
+│       └── Dockerfile
+│
+├── packages/                 # Shared monorepo libraries
+│   ├── database/             # Prisma schema, migrations, and shared Prisma client
+│   └── shared/               # Shared TypeScript types, enums, DTOs, and response envelopes
+│
+├── docs/                     # Project documentation specifications
 │   ├── API_specification.md  # Complete REST API reference
-│   ├── Architecture.md       # System architecture and execution flows
-│   └── Database.md           # Database models, schemas, and ER diagram
-├── docker-compose.prod.yml   # Multi-container production deployment stack
+│   ├── Architecture.md       # Architectural specifications & execution flows
+│   └── Database.md           # Database ER diagram & table definitions
+├── test/                     # Automated verification suites
+│   ├── system-verification.ts# 36-test comprehensive verification harness
+│   └── test-slack.ts         # Live Slack incoming webhook test utility
+├── .env                      # Local environment configuration
+├── .env.example              # Template environment configuration
+├── docker-compose.yml        # Full-stack Docker Compose (frontend, backend, postgres, redis, scheduler, worker)
 ├── package.json              # Monorepo root package configuration
+├── pnpm-workspace.yaml       # pnpm workspace definition
 └── turbo.json                # Turborepo task pipeline definition
 ```
 
 ---
 
-## 4. Backend Component Interaction & Data Flow
+## 4. Express.js MVC Architecture
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Admin as Dev / SRE
-    participant Web as Next.js Web UI
-    participant API as NestJS REST API
-    participant DB as Supabase PostgreSQL
-    participant Redis as Redis (BullMQ)
-    participant Sched as Scheduler Daemon
-    participant Worker as Worker Engine
-    participant Target as External API Target
-    participant Slack as Slack Webhook
+The backend implements a clean, layered **MVC (Model-View-Controller)** pattern:
 
-    Admin->>Web: Create Monitor (e.g., https://api.target.com/health)
-    Web->>API: POST /api/v1/monitors
-    API->>DB: INSERT into monitors (status: UNKNOWN, next_check_at: now())
-    DB-->>API: Monitor Created
-    API-->>Web: 201 Created
-
-    loop Every 5 Seconds (Scheduler Tick)
-        Sched->>DB: SELECT due monitors (next_check_at <= now() AND enabled = true)
-        Sched->>DB: Atomic advance next_check_at & INSERT monitoring_occurrence (PENDING)
-        Sched->>Redis: Enqueue check job into monitor-checks queue
-    end
-
-    loop BullMQ Job Consumer
-        Worker->>Redis: Pop check job
-        Worker->>Worker: Pre-resolve DNS & Validate Non-Private IP (SSRF Shield)
-        Worker->>Target: HTTP Request (Socket pinned to validated IP)
-        Target-->>Worker: HTTP Response (Status, Headers, TTFB, Body)
-        Worker->>DB: INSERT monitor_check & UPDATE monitoring_occurrence (COMPLETED)
-        Worker->>DB: Evaluate State Machine (Failure count vs Success count)
-        alt 3 Consecutive Failures Breached
-            Worker->>DB: UPDATE monitor (DOWN), INSERT incident (OPEN), INSERT outbox_events
-            Worker->>Slack: POST Block Kit Alert (Red Outage Card)
-            Worker->>DB: UPDATE outbox_events (PUBLISHED)
-        else 2 Consecutive Successes Breached
-            Worker->>DB: UPDATE monitor (UP), UPDATE incident (RESOLVED), INSERT outbox_events
-            Worker->>Slack: POST Block Kit Alert (Green Recovery Card)
-            Worker->>DB: UPDATE outbox_events (PUBLISHED)
-        end
-    end
 ```
+[ HTTP Request ]
+       |
+       v
+[ Express Middleware Pipeline ] -> Helmet, CORS, Cookie-Parser, JSON Parser, Logger, Rate-Limiter
+       |
+       v
+[ Route Layer (routes/) ] -------> Matches path, runs Auth & Zod Validation Middlewares
+       |
+       v
+[ Controller Layer (controllers/) ] -> Parses input, calls Service, sends Standard JSON Response
+       |
+       v
+[ Service Layer (services/) ] -------> Executes business rules, orchestrates Repositories, handles crypto/JWT
+       |
+       v
+[ Repository Layer (repositories/) ]-> Encapsulates Prisma queries against PostgreSQL
+       |
+       v
+[ Database (packages/database/) ] ---> Executes SQL queries
+```
+
+### 4.1 Controllers
+- Exclusively handle HTTP requests, extract parameters/body/query, invoke services, and format standardized responses (`sendSuccess` / `sendError`).
+- Never perform raw database queries or complex calculations.
+
+### 4.2 Services
+- Implement business logic, such as password hashing via Argon2id, JWT token signing, refresh token rotation, IDOR permission checks, and aggregation calculations.
+
+### 4.3 Repositories
+- Encapsulate all database queries via the shared `@pulsewatch/database` Prisma client.
+- Provide clean async methods (`create`, `findById`, `findMany`, `update`, `delete`, `get24hStats`).
 
 ---
 
@@ -170,100 +182,35 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     actor User as User
-    participant AuthCtrl as AuthController
-    participant AuthSvc as AuthService
-    participant DB as Supabase PostgreSQL
+    participant Route as auth.routes.ts
+    participant Val as validate.middleware (Zod)
+    participant Ctrl as AuthController
+    participant Svc as AuthService
+    participant Repo as UserRepository
+    participant DB as PostgreSQL
 
-    User->>AuthCtrl: POST /api/v1/auth/register (name, email, password)
-    AuthCtrl->>AuthSvc: register(dto)
-    AuthSvc->>DB: Check if email exists
-    AuthSvc->>AuthSvc: Hash password with Argon2id (64MB memory, 3 passes)
-    AuthSvc->>DB: INSERT into users
-    AuthSvc->>AuthSvc: Generate JWT access_token & random refresh_token
-    AuthSvc->>DB: INSERT into refresh_tokens (token_hash)
-    AuthCtrl-->>User: Set-Cookie: pulsewatch_refresh_token (HttpOnly) & Return access_token
+    User->>Route: POST /api/v1/auth/register (name, email, password)
+    Route->>Val: Validate request body against registerSchema
+    Val-->>Route: Validated
+    Route->>Ctrl: register(req, res, next)
+    Ctrl->>Svc: register(dto)
+    Svc->>Repo: findByEmail(email)
+    Repo->>DB: SELECT * FROM users WHERE email = $1
+    DB-->>Repo: null
+    Svc->>Svc: Hash password with Argon2id (64MB memory, 3 passes)
+    Svc->>Repo: create({ name, email, passwordHash })
+    Repo->>DB: INSERT into users
+    DB-->>Repo: User record
+    Svc->>Svc: Generate JWT access_token & random refresh_token
+    Svc->>Repo: createRefreshToken({ userId, tokenHash, expiresAt })
+    Repo->>DB: INSERT into refresh_tokens
+    Svc-->>Ctrl: { tokens, rawRefreshToken }
+    Ctrl-->>User: Set-Cookie: pulsewatch_refresh_token & 201 Created
 ```
 
-### 5.2 Refresh Token Rotation & Reuse Revocation Flow
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Client as Client App
-    participant Auth as AuthService
-    participant DB as Supabase PostgreSQL
-
-    Client->>Auth: POST /api/v1/auth/refresh (Cookie: pulsewatch_refresh_token)
-    Auth->>DB: Find RefreshToken by SHA-256 hash
-    alt Token Missing or Revoked (revoked_at IS NOT NULL)
-        Note over Auth,DB: CRITICAL: Token Reuse Detected!
-        Auth->>DB: UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = token.user_id
-        Auth-->>Client: 401 Unauthorized (Force complete re-login)
-    else Token Valid & Not Revoked
-        Auth->>DB: UPDATE refresh_tokens SET revoked_at = now() (Revoke used token)
-        Auth->>Auth: Generate fresh access_token & new refresh_token
-        Auth->>DB: INSERT new refresh_tokens record
-        Auth-->>Client: Set new refresh cookie & return fresh access_token
-    end
-```
-
-### 5.3 Monitor Scheduling & Lease Management
-1. The **Scheduler daemon** executes every 5 seconds.
-2. It queries due monitors using the optimized compound index:
-   ```sql
-   SELECT * FROM monitors 
-   WHERE enabled = true AND next_check_at <= NOW() 
-   LIMIT 100;
-   ```
-3. To prevent duplicate executions, the scheduler advances `next_check_at` immediately inside a transaction:
-   ```sql
-   UPDATE monitors 
-   SET next_check_at = NOW() + (interval_seconds * INTERVAL '1 second')
-   WHERE id = $1;
-   ```
-4. It inserts a `monitoring_occurrences` row with status `PENDING` and a lease expiration (`leaseExpiresAt = now() + 60s`).
-5. It pushes the job payload to Redis (`monitor-checks` BullMQ queue).
-
-### 5.4 SSRF Shield & HTTP Probe Execution
-The worker execution pipeline follows strict defensive networking:
-1. **DNS Pre-Resolution**: Hostname is resolved via `dns.promises.lookup(hostname)`.
-2. **Private IP Rejection**: Validates that resolved IPv4/IPv6 addresses do not fall within private or cloud ranges:
-   - `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` (RFC 1918)
-   - `127.0.0.0/8` (Loopback)
-   - `169.254.0.0/16` (Link-local / AWS / GCP / Azure metadata endpoint `169.254.169.254`)
-   - `::1`, `fc00::/7`, `fe80::/10` (IPv6 loopback, unique local, link-local)
-3. **Socket IP Pinning**: The custom `http.Agent` overrides `lookup` to return the pre-verified IP, preventing attackers from modifying DNS records between verification and socket creation (defeating DNS rebinding).
-4. **Timing Breakdown**: Microsecond timers track `process.hrtime.bigint()` to log total `responseTimeMs`.
-
-### 5.5 Incident State Machine & Flapping Prevention
-PulseWatch employs a deterministic hysteresis state machine:
-
-```mermaid
-stateDiagram-v2
-    [*] --> UNKNOWN
-    UNKNOWN --> UP: First Check Passed
-    UNKNOWN --> DOWN: 3 Consecutive Failures
-
-    UP --> UP: Check Passed (failures = 0)
-    UP --> UP: 1st Failure (failures = 1)
-    UP --> UP: 2nd Failure (failures = 2)
-    UP --> DOWN: 3rd Consecutive Failure (Trigger INCIDENT_OPENED & Slack Alert)
-
-    DOWN --> DOWN: Check Failed (failures >= 3)
-    DOWN --> RECOVERING: 1st Success (successes = 1, Trigger RECOVERY_STARTED)
-    
-    RECOVERING --> DOWN: Failure During Probation (Trigger INCIDENT_REOPENED)
-    RECOVERING --> UP: 2nd Consecutive Success (Trigger INCIDENT_RESOLVED & Slack Alert)
-```
-
-- **Outage Declaration**: Requires **3 consecutive failures**. Single or double intermittent failures do not create incidents or spam alerts.
-- **Probationary Recovery (`RECOVERING`)**: A single success shifts the incident to `RECOVERING`.
-- **Flap Regression**: If a check fails while in `RECOVERING`, the state immediately reverts to `DOWN` and logs an `INCIDENT_REOPENED` event.
-- **Incident Resolution**: Requires **2 consecutive successes** to transition to `RESOLVED` and reset monitor status to `UP`.
-
-### 5.6 Transactional Outbox Pattern & Slack Integration
-To prevent dual-write failure vulnerabilities (where an incident is written to the database but an alert fails to dispatch or crashes the worker):
-1. **Atomic Outbox Staging**: On incident status transitions (`INCIDENT_OPENED`, `INCIDENT_RESOLVED`), an `outbox_events` record is written inside the same database transaction as the `incidents` and `monitors` updates.
-2. **Immediate In-Process Dispatch**: The worker immediately attempts asynchronous dispatch to `sendSlackAlert` using `SLACK_WEBHOOK_URL`.
-3. **Block Kit Formatting**: Outage alerts render with red borders (`#E01E5A`) and failure details. Recovery alerts render with green borders (`#2EB67D`) and duration.
-4. **Publication Ack**: Upon receiving HTTP 200 from Slack, the outbox record is marked `PUBLISHED` with `publishedAt = now()`.
-5. **Fault Tolerance**: If Slack is unreachable or rate-limits requests, the record remains `PENDING` (or `FAILED`), ready for asynchronous poller retries.
+### 5.2 Monitor Scheduling & Probe Execution
+1. **Scheduler Tick**: The autonomous scheduler daemon (`services/scheduler`) polls PostgreSQL every 5 seconds for monitors with `enabled = true` and `nextCheckAt <= now()`.
+2. **Atomic Lease Advance**: In a single database transaction, the scheduler advances `nextCheckAt = now() + intervalSeconds` and records a `PENDING` `monitoring_occurrences` record with a 60-second lease expiration.
+3. **Queue Dispatch**: The check job is enqueued to Redis via BullMQ (`monitor-checks` queue).
+4. **Worker Prober**: A worker in `services/worker` consumes the job, performs pre-flight SSRF DNS validation, binds raw sockets to the verified public IP (defeating DNS rebinding), and executes the HTTP probe using nanosecond timers.
+5. **State Machine & Slack Alert**: The check result is saved to `monitor_checks`. If consecutive failures hit 3, an incident is created (`OPEN`), an outbox event is staged (`INCIDENT_OPENED`), and a Slack Block Kit card is delivered. When 2 consecutive successes occur, the incident is updated to `RESOLVED` and a recovery alert is dispatched.

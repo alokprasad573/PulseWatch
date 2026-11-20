@@ -1,12 +1,11 @@
 import { getEnv } from '@pulsewatch/config';
 import { prisma, disconnectPrisma } from '@pulsewatch/database';
-import { AuthService } from '../apps/api/src/modules/auth/auth.service';
-import { JwtService } from '@nestjs/jwt';
-import { MonitorsService } from '../apps/api/src/modules/monitors/monitors.service';
-import { validateTargetUrl, SsrfValidationError, isPrivateIp } from '../apps/worker/src/ssrf';
-import { executeHttpCheck } from '../apps/worker/src/executor';
-import { evaluateIncidentState } from '../apps/worker/src/incidents';
-import { DashboardService } from '../apps/api/src/modules/dashboard/dashboard.service';
+import { AuthService } from '../backend/src/services/auth.service';
+import { MonitorService } from '../backend/src/services/monitor.service';
+import { validateTargetUrl, SsrfValidationError, isPrivateIp } from '../services/worker/src/ssrf';
+import { executeHttpCheck } from '../services/worker/src/executor';
+import { evaluateIncidentState } from '../services/worker/src/incidents';
+import { DashboardService } from '../backend/src/services/dashboard.service';
 
 async function runTestSuite() {
   console.log('====================================================');
@@ -42,9 +41,8 @@ async function runTestSuite() {
     }
   }
 
-  const jwtService = new JwtService({});
-  const authService = new AuthService(jwtService);
-  const monitorsService = new MonitorsService();
+  const authService = new AuthService();
+  const monitorsService = new MonitorService();
   const dashboardService = new DashboardService();
 
   const testId = Date.now();

@@ -7,6 +7,10 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "dev:frontend": "pnpm --filter @pulsewatch/frontend dev",
+    "dev:backend": "pnpm --filter @pulsewatch/backend dev",
+    "dev:scheduler": "pnpm --filter @pulsewatch/scheduler dev",
+    "dev:worker": "pnpm --filter @pulsewatch/worker dev",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "test:system": "tsx test/system-verification.ts",
@@ -15,6 +19,9 @@
     "db:generate": "turbo run db:generate",
     "db:migrate": "turbo run db:migrate",
     "db:push": "turbo run db:push",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:build": "docker compose build",
     "clean": "turbo run clean && rimraf node_modules"
   },
   "devDependencies": {
