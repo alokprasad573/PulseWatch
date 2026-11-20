@@ -1,13 +1,22 @@
 services:
   # ---------------------------------------------------------------------------
-  # 1. NestJS REST API (Public Web Service)
+  # 1. Managed Redis / Key-Value Instance
+  # ---------------------------------------------------------------------------
+  - type: keyvalue
+    name: pulsewatch-redis
+    plan: free
+    maxmemoryPolicy: noeviction
+    ipAllowList: [] # internal only
+
+  # ---------------------------------------------------------------------------
+  # 2. NestJS REST API (Public Web Service)
   # ---------------------------------------------------------------------------
   - type: web
     name: pulsewatch-api
     runtime: docker
     dockerfilePath: apps/api/Dockerfile
     dockerContext: .
-    plan: starter # or free
+    plan: free
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
@@ -19,7 +28,8 @@ services:
       - key: DIRECT_URL
         sync: false
       - key: REDIS_URL
-        fromRedis:
+        fromService:
+          type: keyvalue
           name: pulsewatch-redis
           property: connectionString
       - key: JWT_ACCESS_SECRET
@@ -30,21 +40,22 @@ services:
         value: https://pulsewatch-kohl.vercel.app
 
   # ---------------------------------------------------------------------------
-  # 2. Monitoring Scheduler (Background Worker Daemon)
+  # 3. Monitoring Scheduler (Background Worker Daemon)
   # ---------------------------------------------------------------------------
   - type: worker
     name: pulsewatch-scheduler
     runtime: docker
     dockerfilePath: apps/scheduler/Dockerfile
     dockerContext: .
-    plan: starter # Background workers on Render require Starter ($7/mo)
+    plan: starter # Render background workers require Starter ($7/mo)
     envVars:
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
         sync: false
       - key: REDIS_URL
-        fromRedis:
+        fromService:
+          type: keyvalue
           name: pulsewatch-redis
           property: connectionString
       - key: SCHEDULER_POLL_INTERVAL_MS
@@ -53,7 +64,7 @@ services:
         value: 500
 
   # ---------------------------------------------------------------------------
-  # 3. Monitoring Prober & Slack Alert Worker (Background Worker Daemon)
+  # 4. Monitoring Prober & Slack Alert Worker (Background Worker Daemon)
   # ---------------------------------------------------------------------------
   - type: worker
     name: pulsewatch-worker
@@ -67,16 +78,9 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: REDIS_URL
-        fromRedis:
+        fromService:
+          type: keyvalue
           name: pulsewatch-redis
           property: connectionString
       - key: SLACK_WEBHOOK_URL
         sync: false
-
-# ---------------------------------------------------------------------------
-# 4. Redis Queue Instance
-# ---------------------------------------------------------------------------
-redis:
-  - name: pulsewatch-redis
-    plan: free # Render provides free Redis for 30 days or persistent low-cost instance
-    ipAllowList: [] # internal only
