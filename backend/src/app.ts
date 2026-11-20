@@ -18,17 +18,18 @@ export function createApp(): Express {
   // CORS configuration
   const allowedOrigins = [
     config.WEB_ORIGIN,
+    process.env.CORS_ORIGIN,
     'http://localhost:3000',
     'http://localhost:3001',
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3001',
-    'https://pulsewatch-kohl.vercel.app',
-  ].filter(Boolean);
+    'https://pulse-watch-eta.vercel.app',
+  ].filter(Boolean) as string[];
 
   app.use(
     cors({
       origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
+        if (!origin || allowedOrigins.includes(origin) || (origin.endsWith('.vercel.app') && (origin.includes('pulse-watch') || origin.includes('pulsewatch')))) {
           return callback(null, true);
         }
         return callback(new Error(`Origin ${origin} not allowed by CORS`));
