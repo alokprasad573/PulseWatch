@@ -14,8 +14,9 @@ RUN npm install -g pnpm@12.21.0
 # Copy workspace configuration
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json tsconfig.base.json ./
 
-# Copy packages and application source
+# Copy packages, services, and application source
 COPY packages/ ./packages/
+COPY services/ ./services/
 COPY backend/ ./backend/
 
 # Install dependencies and approve builds
@@ -46,6 +47,7 @@ USER node
 COPY --chown=node:node --from=builder /app/package.json ./
 COPY --chown=node:node --from=builder /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/packages ./packages
+COPY --chown=node:node --from=builder /app/services ./services
 COPY --chown=node:node --from=builder /app/backend ./backend
 
 EXPOSE 4001

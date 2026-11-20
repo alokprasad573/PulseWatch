@@ -1,6 +1,8 @@
 import app from './app';
 import config from './config';
 import { checkDatabaseHealth, disconnectPrisma } from '@pulsewatch/database';
+import { startScheduler, stopScheduler } from '@pulsewatch/scheduler';
+import { startWorker, stopWorker } from '@pulsewatch/worker';
 import { Logger } from './utils/logger';
 
 const port = config.PORT || config.API_PORT || 4001;
@@ -19,12 +21,32 @@ async function bootstrap() {
       Logger.info(`Health check available at http://localhost:${port}/health and http://localhost:${port}/api/v1/health`);
     });
 
+    // Start embedded scheduler & worker if enabled (default: true)
+    const enableEmbedded = process.env.ENABLE_EMBEDDED_WORKERS !== 'false';
+    if (enableEmbedded) {
+      try {
+        startScheduler();
+        Logger.info('[PulseWatch] Embedded Scheduler daemon started successfully');
+        startWorker();
+        Logger.info('[PulseWatch] Embedded Probe Worker started successfully');
+      } catch (workerErr) {
+        Logger.error('Failed to start embedded scheduler/worker:', workerErr);
+      }
+    }
+
     // Graceful shutdown handling
     const shutdown = async (signal: string) => {
       Logger.info(`Received ${signal}. Shutting down gracefully...`);
       server.close(async () => {
         Logger.info('HTTP server closed.');
         try {
+          if (enableEmbedded) {
+            await Promise.allSettled([
+              stopScheduler().catch((e: unknown) => Logger.error('Error stopping scheduler:', e)),
+              stopWorker().catch((e: unknown) => Logger.error('Error stopping worker:', e)),
+            ]);
+            Logger.info('Embedded workers stopped.');
+          }
           await disconnectPrisma();
           Logger.info('Prisma disconnected.');
           process.exit(0);
