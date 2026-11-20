@@ -22,9 +22,9 @@ COPY backend/ ./backend/
 RUN pnpm install --frozen-lockfile
 RUN pnpm approve-builds --all
 
-# Generate Prisma client and build Express Backend
+# Generate Prisma client and build dependencies & Express Backend
 RUN pnpm --filter @pulsewatch/database db:generate
-RUN pnpm --filter @pulsewatch/backend build
+RUN pnpm --filter @pulsewatch/backend... build
 
 # ==========================================
 # STAGE 2: Production Runner

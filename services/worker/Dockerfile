@@ -16,7 +16,7 @@ RUN pnpm install --frozen-lockfile
 RUN pnpm approve-builds --all
 
 RUN pnpm --filter @pulsewatch/database db:generate
-RUN pnpm --filter @pulsewatch/worker build
+RUN pnpm --filter @pulsewatch/worker... build
 
 # ==========================================
 # STAGE 2: Production Runner

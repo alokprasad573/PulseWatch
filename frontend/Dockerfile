@@ -19,8 +19,8 @@ COPY frontend/ ./frontend/
 RUN pnpm install --frozen-lockfile
 RUN pnpm approve-builds --all
 
-# Build Next.js frontend
-RUN pnpm --filter @pulsewatch/frontend build
+# Build Next.js frontend and its dependencies
+RUN pnpm --filter @pulsewatch/frontend... build
 
 # ==========================================
 # STAGE 2: Production Runner
