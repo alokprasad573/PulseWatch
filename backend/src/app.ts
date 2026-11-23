@@ -51,8 +51,9 @@ export function createApp(): Express {
   // Root health endpoints (for docker and orchestrator probes)
   app.use('/', healthRoutes);
 
-  // API v1 routes
+  // API v1 routes (with /api/vi alias for Roman numeral / keyboard typo)
   app.use('/api/v1', routes);
+  app.use('/api/vi', routes);
 
   // 404 handler
   app.use(notFoundHandler);
