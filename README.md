@@ -323,3 +323,11 @@ For exhaustive technical references, consult the primary documentation:
 - 📘 **[API Specification](docs/API_specification.md)** — Complete endpoint catalog, DTO validation, and JSON envelopes.
 - 🏛️ **[System Architecture](docs/Architecture.md)** — Detailed MVC flow, sequence diagrams, and SSRF defense engine.
 - 🗄️ **[Database Specification](docs/Database.md)** — PostgreSQL ER diagram, table schemas, and indexing strategies.
+
+---
+
+## License & Attribution
+
+This project is open-sourced under the **MIT License**. See the [LICENSE](LICENSE) file for details.
+
+Developed with ❤️ by **Alok Prasad** to help teams monitor APIs, respond to incidents, and build more reliable services.
