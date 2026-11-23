@@ -2,8 +2,9 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { z } from 'zod';
 
-// Load .env from root or local directory
+// Load .env from root, parent, or current working directory
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '../.env') });
 dotenv.config({ path: path.resolve(process.cwd(), '../../.env') });
 
 export const envSchema = z.object({

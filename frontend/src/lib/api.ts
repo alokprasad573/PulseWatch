@@ -12,7 +12,7 @@ import {
   UserDto,
 } from '@pulsewatch/shared';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001/api/v1';
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001/api/v1').replace(/\/+$/, '');
 
 let currentAccessToken: string | null = null;
 
@@ -56,7 +56,12 @@ export async function apiRequest<T = any>(
   });
 
   // If 401 Unauthorized, try refresh once
-  if (response.status === 401 && !endpoint.startsWith('/auth/login') && !endpoint.startsWith('/auth/refresh')) {
+  if (
+    response.status === 401 &&
+    !endpoint.startsWith('/auth/login') &&
+    !endpoint.startsWith('/auth/refresh') &&
+    !endpoint.startsWith('/auth/register')
+  ) {
     try {
       const refreshRes = await fetch(`${API_BASE_URL}/auth/refresh`, {
         method: 'POST',
@@ -74,12 +79,19 @@ export async function apiRequest<T = any>(
           headers,
           credentials: 'include',
         });
-        return retryRes.json();
+        const retryData = await retryRes.json();
+        if (!retryRes.ok) {
+          throw new Error(retryData.message || `Request failed with status ${retryRes.status}`);
+        }
+        return retryData;
       } else {
         setAccessToken(null);
       }
-    } catch {
+    } catch (err) {
       setAccessToken(null);
+      if (err instanceof Error && err.message !== 'Failed to fetch') {
+        throw err;
+      }
     }
   }
 

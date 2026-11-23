@@ -18,12 +18,9 @@ export function createApp(): Express {
   // CORS configuration
   const allowedOrigins = [
     config.WEB_ORIGIN,
-    process.env.CORS_ORIGIN,
+     process.env.CORS_ORIGIN,
     'http://localhost:3000',
-    'http://localhost:3001',
     'http://127.0.0.1:3000',
-    'http://127.0.0.1:3001',
-    'https://pulse-watch-eta.vercel.app',
   ].filter(Boolean) as string[];
 
   app.use(

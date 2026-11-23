@@ -4,21 +4,21 @@
 **Version:** 2.0.0  
 **Status:** Production / Implemented  
 **Architecture Style:** Modular Monorepo + Express.js MVC Backend + Next.js App Router Frontend + Distributed Probing Fleet  
-**Repository Tooling:** pnpm Workspaces + Turborepo + Docker Compose
+**Repository Tooling:** npm Workspaces + Turborepo + Docker Compose
 
 ---
 
 ## 1. System Architecture Overview
 
-PulseWatch is an enterprise-grade API monitoring, uptime verification, and incident management platform. Following a complete architectural migration, PulseWatch is structured as a production-ready monorepo separating concerns into a **Next.js frontend**, an **Express.js MVC backend**, independent **background scheduling and probe execution services**, and **shared workspace packages**.
+PulseWatch is an API monitoring, uptime verification, and incident management platform. Its monorepo separates the **Next.js frontend**, **Express.js MVC backend**, background scheduling and probe execution services, and shared workspace packages.
 
 ### 1.1 Architectural Highlights
-- **Clear Separation of Concerns (MVC)**: The backend is organized around Model-View-Controller principles with decoupled **Controllers** (HTTP handling & status codes), **Services** (domain logic & orchestration), and **Repositories** (Prisma database data-access layer).
-- **Zero-Tolerance SSRF & DNS Rebinding Shield**: Probing engine resolves DNS hostnames before socket connection, blocks private/cloud-metadata IPs (RFC 1918, RFC 4193, `169.254.169.254`), and strictly binds raw sockets to the verified IP to prevent Time-of-Check to Time-of-Use (TOCTOU) DNS rebinding attacks.
-- **Microsecond Precision Network Timers**: Employs `process.hrtime.bigint()` to capture network round-trips with sub-millisecond precision.
-- **Hysteresis Incident State Machine**: Eliminates alert fatigue and transient false positives via 3-strike failure threshold for outages and 2-strike consecutive success threshold for automated recovery.
-- **Transactional Outbox Engine**: Stages alert events (`outbox_events`) atomically with monitor state transitions to guarantee delivery without blocking probe execution.
-- **Global Slack Incoming Webhooks**: Delivers structured Block Kit cards to Slack channels for outage and recovery alerts.
+- **Layered MVC backend:** Controllers handle HTTP requests, services implement domain logic, and repositories provide database access through Prisma.
+- **SSRF and DNS rebinding protection:** Before connecting, the probing engine resolves hostnames, blocks private and cloud metadata addresses (including RFC 1918, RFC 4193, and `169.254.169.254` ranges), and binds raw sockets to the verified IP address. This prevents a DNS response from changing between validation and connection (a TOCTOU attack).
+- **High-resolution network timing:** `process.hrtime.bigint()` measures network round trips with sub-millisecond resolution.
+- **Incident hysteresis:** An incident opens after three consecutive failures and resolves after two consecutive successes, reducing alerts caused by transient failures.
+- **Transactional outbox:** Alert events (`outbox_events`) are staged atomically with monitor state changes so delivery can proceed without blocking probe execution.
+- **Slack alerts:** Incoming webhooks deliver structured Block Kit messages for outages and recoveries.
 
 ---
 
@@ -130,7 +130,7 @@ PulseWatch/
 ├── .env.example              # Template environment configuration
 ├── docker-compose.yml        # Full-stack Docker Compose (frontend, backend, postgres, redis, scheduler, worker)
 ├── package.json              # Monorepo root package configuration
-├── pnpm-workspace.yaml       # pnpm workspace definition
+├── package-lock.json         # npm dependency lockfile
 └── turbo.json                # Turborepo task pipeline definition
 ```
 
@@ -138,7 +138,7 @@ PulseWatch/
 
 ## 4. Express.js MVC Architecture
 
-The backend implements a clean, layered **MVC (Model-View-Controller)** pattern:
+The backend uses a layered **Model-View-Controller (MVC)** pattern:
 
 ```
 [ HTTP Request ]
@@ -163,14 +163,14 @@ The backend implements a clean, layered **MVC (Model-View-Controller)** pattern:
 ```
 
 ### 4.1 Controllers
-- Exclusively handle HTTP requests, extract parameters/body/query, invoke services, and format standardized responses (`sendSuccess` / `sendError`).
+- Handle HTTP requests, extract parameters, body, and query values, invoke services, and format standardized responses (`sendSuccess` / `sendError`).
 - Never perform raw database queries or complex calculations.
 
 ### 4.2 Services
-- Implement business logic, such as password hashing via Argon2id, JWT token signing, refresh token rotation, IDOR permission checks, and aggregation calculations.
+- Implement business logic such as Argon2id password hashing, JWT signing, refresh-token rotation, IDOR permission checks, and aggregation calculations.
 
 ### 4.3 Repositories
-- Encapsulate all database queries via the shared `@pulsewatch/database` Prisma client.
+- Encapsulate database queries through the shared `@pulsewatch/database` Prisma client.
 - Provide clean async methods (`create`, `findById`, `findMany`, `update`, `delete`, `get24hStats`).
 
 ---
@@ -209,8 +209,8 @@ sequenceDiagram
 ```
 
 ### 5.2 Monitor Scheduling & Probe Execution
-1. **Scheduler Tick**: The autonomous scheduler daemon (`services/scheduler`) polls PostgreSQL every 5 seconds for monitors with `enabled = true` and `nextCheckAt <= now()`.
-2. **Atomic Lease Advance**: In a single database transaction, the scheduler advances `nextCheckAt = now() + intervalSeconds` and records a `PENDING` `monitoring_occurrences` record with a 60-second lease expiration.
-3. **Queue Dispatch**: The check job is enqueued to Redis via BullMQ (`monitor-checks` queue).
-4. **Worker Prober**: A worker in `services/worker` consumes the job, performs pre-flight SSRF DNS validation, binds raw sockets to the verified public IP (defeating DNS rebinding), and executes the HTTP probe using nanosecond timers.
-5. **State Machine & Slack Alert**: The check result is saved to `monitor_checks`. If consecutive failures hit 3, an incident is created (`OPEN`), an outbox event is staged (`INCIDENT_OPENED`), and a Slack Block Kit card is delivered. When 2 consecutive successes occur, the incident is updated to `RESOLVED` and a recovery alert is dispatched.
+1. **Scheduler tick:** The scheduler daemon (`services/scheduler`) polls PostgreSQL every five seconds for enabled monitors whose `nextCheckAt` is due.
+2. **Lease advance:** In one database transaction, the scheduler advances `nextCheckAt` by the monitor interval and creates a `PENDING` `monitoring_occurrences` record with a 60-second lease.
+3. **Queue dispatch:** The scheduler enqueues a check job in the BullMQ `monitor-checks` queue, backed by Redis.
+4. **Probe execution:** A worker in `services/worker` consumes the job, validates DNS to guard against SSRF, pins the raw socket to the verified public IP, and performs the HTTP probe with high-resolution timing.
+5. **State update and alerting:** The worker saves the result to `monitor_checks`. After three consecutive failures, it opens an incident and stages an `INCIDENT_OPENED` outbox event for Slack delivery. After two consecutive successes, it resolves the incident and dispatches a recovery alert.

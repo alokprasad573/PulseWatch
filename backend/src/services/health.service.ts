@@ -42,20 +42,32 @@ export class HealthService {
     let redisStatus: 'up' | 'down' = 'down';
     let redisLatencyMs: number | undefined;
 
+    let redis: IORedis | null = null;
     try {
-      const redis = new IORedis(config.REDIS_URL, {
-        connectTimeout: 2000,
+      redis = new IORedis(config.REDIS_URL, {
+        connectTimeout: 500,
         maxRetriesPerRequest: 1,
         lazyConnect: true,
+        retryStrategy: () => null,
+      });
+      redis.on('error', () => {
+        // Prevent unhandled error event when Redis is offline
       });
 
       await redis.connect();
       await redis.ping();
       redisLatencyMs = Date.now() - startRedis;
       redisStatus = 'up';
-      await redis.quit();
     } catch (err: any) {
       Logger.error(`Redis health check failed: ${err.message}`);
+    } finally {
+      if (redis) {
+        try {
+          await redis.quit();
+        } catch {
+          redis.disconnect();
+        }
+      }
     }
 
     let overallStatus: 'ok' | 'degraded' | 'error' = 'ok';

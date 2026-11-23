@@ -154,7 +154,7 @@ PulseWatch/
 ├── .env.example              # Template environment configuration
 ├── docker-compose.yml        # Full-stack Docker Compose (frontend, backend, postgres, redis, scheduler, worker)
 ├── package.json              # Monorepo root package configuration
-├── pnpm-workspace.yaml       # pnpm workspace definition
+├── package-lock.json         # npm dependency lockfile
 └── turbo.json                # Turborepo task pipeline definition
 ```
 
@@ -181,7 +181,7 @@ For complete database schema and entity relationships, see [docs/Database.md](do
 
 Ensure your local machine has:
 - **Node.js**: `v20.x` or higher (LTS)
-- **pnpm**: `v8.x` or `v9.x` (`npm install -g pnpm`)
+- **npm**: `v10.x` or higher (bundled with Node.js LTS)
 - **Docker & Docker Compose**: For local containerized stack execution
 - **PostgreSQL Database**: Local PostgreSQL 15+ or Supabase Managed Instance
 
@@ -221,10 +221,10 @@ SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
 ### Database Setup
 ```bash
 # Generate Prisma Client typings
-pnpm db:generate
+npm run db:generate
 
 # Push schema directly to database
-pnpm db:push
+npm run db:push
 ```
 
 ### Running Locally (Development Mode)
@@ -235,7 +235,7 @@ docker run -d --name pulsewatch-redis -p 6379:6379 redis:7-alpine
 
 Start all monorepo applications in watch mode:
 ```bash
-pnpm dev
+npm run dev
 ```
 
 - **Frontend Dashboard**: `http://localhost:3000`
@@ -244,10 +244,10 @@ pnpm dev
 
 Individual service commands:
 ```bash
-pnpm dev:frontend   # Starts only Next.js frontend
-pnpm dev:backend    # Starts only Express backend
-pnpm dev:scheduler  # Starts only Scheduler daemon
-pnpm dev:worker     # Starts only Probe worker
+npm run dev:frontend   # Starts only Next.js frontend
+npm run dev:backend    # Starts only Express backend
+npm run dev:scheduler  # Starts only Scheduler daemon
+npm run dev:worker     # Starts only Probe worker
 ```
 
 ---
@@ -272,7 +272,7 @@ PulseWatch supports automated Slack incident alerting:
 2. Set `SLACK_WEBHOOK_URL` in `.env`.
 3. Verify alert dispatching with the built-in test utility:
    ```bash
-   pnpm test:slack
+   npm run test:slack
    ```
    *Dispatches live simulated outage (Red card) and recovery (Green card) alerts.*
 
@@ -280,16 +280,22 @@ PulseWatch supports automated Slack incident alerting:
 
 ## 11. Testing & Verification
 
-PulseWatch includes an automated 36-test system verification harness:
+PulseWatch includes an automated system verification harness:
 ```bash
+# Run API endpoint verification tests (auth contracts, health checks, route mounting)
+npm run test:endpoints
+
 # Run full system verification suite (36 tests)
-pnpm test:system
+npm run test:system
 
 # Run TypeScript compilation and build across all 7 packages
-pnpm build
+npm run build
+
+# Run ESLint validation across workspaces
+npm run lint
 
 # Run live Slack webhook alert verification
-pnpm test:slack
+npm run test:slack
 ```
 
 ---

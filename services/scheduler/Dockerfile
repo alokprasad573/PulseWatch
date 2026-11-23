@@ -1,27 +1,25 @@
 # ==========================================
 # STAGE 1: Builder
 # ==========================================
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
 RUN apk add --no-cache python3 make g++ openssl
-RUN npm install -g pnpm@12.21.0
 
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json tsconfig.base.json ./
+COPY package.json package-lock.json turbo.json tsconfig.base.json ./
 COPY packages/ ./packages/
 COPY services/scheduler/ ./services/scheduler/
 
-RUN pnpm install --frozen-lockfile
-RUN pnpm approve-builds --all
+RUN npm ci
 
-RUN pnpm --filter @pulsewatch/database db:generate
-RUN pnpm --filter @pulsewatch/scheduler... build
+RUN npm run db:generate --workspace=@pulsewatch/database
+RUN npx turbo run build --filter=@pulsewatch/scheduler...
 
 # ==========================================
 # STAGE 2: Production Runner
 # ==========================================
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 
 WORKDIR /app
 

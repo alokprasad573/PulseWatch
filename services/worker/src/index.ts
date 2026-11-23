@@ -19,6 +19,9 @@ export function getRedisConnection(): IORedis {
       lazyConnect: true,
       enableOfflineQueue: false,
     });
+    redisConnection.on('error', (err) => {
+      // Suppress unhandled EventEmitter crash during reconnects
+    });
   }
   return redisConnection;
 }

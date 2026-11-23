@@ -272,10 +272,10 @@ Transactional outbox staging table ensuring guaranteed event publication (e.g. S
 
 1. **Prisma Generation**:
    ```bash
-   pnpm db:generate
+   npm run db:generate
    ```
 2. **Schema Synchronization**:
    ```bash
-   pnpm db:push
+   npm run db:push
    ```
 3. **Audit History**: Obsolete notification tables and enums (`notification_channels`, `notification_deliveries`) have been pruned.

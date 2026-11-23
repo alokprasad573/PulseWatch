@@ -4,6 +4,7 @@ import { HealthController } from '../controllers/health.controller';
 const router = Router();
 const controller = new HealthController();
 
+router.get('/', controller.getHealth);
 router.get('/health', controller.getHealth);
 router.get('/ready', controller.getReady);
 

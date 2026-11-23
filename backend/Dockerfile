@@ -1,36 +1,32 @@
 # ==========================================
 # STAGE 1: Builder
 # ==========================================
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
 # Install build essentials for native dependencies (argon2, etc.) and openssl for Prisma engines
 RUN apk add --no-cache python3 make g++ openssl
 
-# Install pnpm
-RUN npm install -g pnpm@12.21.0
-
 # Copy workspace configuration
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json tsconfig.base.json ./
+COPY package.json package-lock.json turbo.json tsconfig.base.json ./
 
 # Copy packages, services, and application source
 COPY packages/ ./packages/
 COPY services/ ./services/
 COPY backend/ ./backend/
 
-# Install dependencies and approve builds
-RUN pnpm install --frozen-lockfile
-RUN pnpm approve-builds --all
+# Install dependencies
+RUN npm ci
 
 # Generate Prisma client and build dependencies & Express Backend
-RUN pnpm --filter @pulsewatch/database db:generate
-RUN pnpm --filter @pulsewatch/backend... build
+RUN npm run db:generate --workspace=@pulsewatch/database
+RUN npx turbo run build --filter=@pulsewatch/backend...
 
 # ==========================================
 # STAGE 2: Production Runner
 # ==========================================
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 
 WORKDIR /app
 

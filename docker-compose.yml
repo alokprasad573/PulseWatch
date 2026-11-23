@@ -6,6 +6,8 @@ services:
     image: postgres:15-alpine
     container_name: pulsewatch-postgres
     restart: always
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
@@ -27,6 +29,8 @@ services:
     image: redis:7-alpine
     container_name: pulsewatch-redis
     restart: always
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
@@ -57,12 +61,19 @@ services:
       - REDIS_URL=redis://redis:6379
       - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET:-pulsewatch_super_secret_jwt_access_token_32chars}
       - REFRESH_TOKEN_PEPPER=${REFRESH_TOKEN_PEPPER:-pulsewatch_super_secret_refresh_pepper_32chars}
-      - WEB_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
+      - WEB_ORIGIN=${WEB_ORIGIN:-${CORS_ORIGIN:-http://localhost:3000}}
+      - ENABLE_EMBEDDED_WORKERS=false
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:4001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - pulsewatch-network
 
@@ -79,15 +90,15 @@ services:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/pulsewatch?schema=public}
       - REDIS_URL=redis://redis:6379
-      - SCHEDULER_POLL_INTERVAL_MS=5000
-      - SCHEDULER_BATCH_SIZE=500
+      - SCHEDULER_POLL_INTERVAL_MS=${SCHEDULER_POLL_INTERVAL_MS:-5000}
+      - SCHEDULER_BATCH_SIZE=${SCHEDULER_BATCH_SIZE:-500}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       backend:
-        condition: service_started
+        condition: service_healthy
     networks:
       - pulsewatch-network
 
@@ -104,6 +115,7 @@ services:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/pulsewatch?schema=public}
       - REDIS_URL=redis://redis:6379
+      - MONITOR_WORKER_CONCURRENCY=${MONITOR_WORKER_CONCURRENCY:-10}
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
     depends_on:
       postgres:
@@ -111,7 +123,7 @@ services:
       redis:
         condition: service_healthy
       backend:
-        condition: service_started
+        condition: service_healthy
     networks:
       - pulsewatch-network
 
@@ -122,16 +134,25 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4001/api/v1}
     container_name: pulsewatch-frontend
     restart: always
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=${API_URL:-http://localhost:4001/api/v1}
+      - PORT=3000
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4001/api/v1}
     depends_on:
       backend:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - pulsewatch-network
 

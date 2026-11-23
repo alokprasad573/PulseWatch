@@ -125,8 +125,8 @@ dist
 # Stores Visual Studio Code versions used for testing Visual Studio Code extensions
 .vscode-test
 
-# pnpm
-.pnpm-store
+# npm
+npm-debug.log*
 
 # yarn v3
 .pnp.*

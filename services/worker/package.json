@@ -11,9 +11,9 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@pulsewatch/config": "workspace:*",
-    "@pulsewatch/database": "workspace:*",
-    "@pulsewatch/shared": "workspace:*",
+    "@pulsewatch/config": "*",
+    "@pulsewatch/database": "*",
+    "@pulsewatch/shared": "*",
     "axios": "^1.8.1",
     "bullmq": "^5.41.6",
     "dotenv": "^16.4.7",

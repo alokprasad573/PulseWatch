@@ -3,16 +3,23 @@
   "version": "1.0.0",
   "private": true,
   "description": "PulseWatch - Enterprise-grade API Monitoring & Incident Management Platform",
-  "packageManager": "pnpm@12.21.0",
+  "packageManager": "npm@11.20.0",
+  "workspaces": [
+    "frontend",
+    "backend",
+    "services/*",
+    "packages/*"
+  ],
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "dev:frontend": "pnpm --filter @pulsewatch/frontend dev",
-    "dev:backend": "pnpm --filter @pulsewatch/backend dev",
-    "dev:scheduler": "pnpm --filter @pulsewatch/scheduler dev",
-    "dev:worker": "pnpm --filter @pulsewatch/worker dev",
+    "dev:frontend": "npm run dev --workspace=@pulsewatch/frontend",
+    "dev:backend": "npm run dev --workspace=@pulsewatch/backend",
+    "dev:scheduler": "npm run dev --workspace=@pulsewatch/scheduler",
+    "dev:worker": "npm run dev --workspace=@pulsewatch/worker",
     "lint": "turbo run lint",
     "test": "turbo run test",
+    "test:endpoints": "tsx test/api-endpoints.test.ts",
     "test:system": "tsx test/system-verification.ts",
     "test:slack": "tsx test/test-slack.ts",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
@@ -29,5 +36,13 @@
     "tsx": "^4.23.15",
     "turbo": "^2.4.4",
     "typescript": "^5.8.2"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "@prisma/client@5.22.0": true,
+    "@prisma/engines@5.22.0": true,
+    "argon2@0.41.1": true,
+    "msgpackr-extract@3.0.7": true,
+    "prisma@5.22.0": true
   }
 }

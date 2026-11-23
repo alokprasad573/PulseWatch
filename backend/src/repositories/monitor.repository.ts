@@ -137,13 +137,15 @@ export class MonitorRepository {
 
   async getMetrics(monitorId: string, d24h: Date, d7d: Date, d30d: Date) {
     const calcUptime = async (since: Date) => {
-      const total = await prisma.monitorCheck.count({
-        where: { monitorId, checkedAt: { gte: since } },
-      });
+      const [total, success] = await Promise.all([
+        prisma.monitorCheck.count({
+          where: { monitorId, checkedAt: { gte: since } },
+        }),
+        prisma.monitorCheck.count({
+          where: { monitorId, checkedAt: { gte: since }, isSuccess: true },
+        }),
+      ]);
       if (total === 0) return 100;
-      const success = await prisma.monitorCheck.count({
-        where: { monitorId, checkedAt: { gte: since }, isSuccess: true },
-      });
       return Number(((success / total) * 100).toFixed(2));
     };
 
