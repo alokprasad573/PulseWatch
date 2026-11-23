@@ -1,25 +1,37 @@
 # PulseWatch — Database Design & Schema Specification
 
 **Document:** `docs/Database.md`  
+**Version:** 2.0.0  
+**Status:** Production / Implemented  
+**Database System:** PostgreSQL 15+ (Local or Cloud Supabase)  
 **Version:** 2.1.0  
 **Status:** Implemented / Verified against Codebase  
 **Database Engine:** PostgreSQL 15+ (Local Docker or Managed Cloud PostgreSQL)  
 **Object-Relational Mapping (ORM):** Prisma ORM v5.22.0  
+**Package Location:** `packages/database`
 **Package Workspace:** `packages/database`
 
 ---
 
+## 1. Database Overview & Design Principles
 ## 1. Database Architecture & Design Principles
 
+PulseWatch uses PostgreSQL as its primary relational store of truth. All application entities—including users, credentials, monitors, check logs, incidents, historical rollups, and transactional outbox events—are persisted in PostgreSQL.
 PulseWatch relies on PostgreSQL as its primary ACID-compliant relational data store. All core platform state—including tenant accounts, authentication sessions, monitor configurations, discrete scheduled execution occurrences, probe check logs, outage incidents, incident audit event timelines, hourly/daily pre-aggregated metric rollups, and transactional outbox events—is persisted and indexed in PostgreSQL.
 
 ### 1.1 Express MVC Repository Layer Integration
+In the updated architecture, database access is fully encapsulated in **Repositories** (`backend/src/repositories/`):
+- `UserRepository`: User creation, profile retrieval, refresh token hash storage, rotation, and reuse revocation.
+- `MonitorRepository`: Monitor configuration, batch 24-hour groupBy metrics, execution logs, and cascading deletes.
+- `IncidentRepository`: Outage recording, event timelines, and status updates.
+- `DashboardRepository`: High-performance aggregate rollups.
 Direct database access and Prisma Client invocations are strictly forbidden in HTTP controllers, middleware, and route handlers. Data access is encapsulated within dedicated repository classes in `backend/src/repositories/`:
 - **`UserRepository` (`user.repository.ts`)**: Tenant registration, credential retrieval, email verification, HMAC-SHA256 refresh token persistence, atomic token rotation, and single-query user-wide session revocations.
 - **`MonitorRepository` (`monitor.repository.ts`)**: Monitor lifecycle, scheduler due-check polling, atomic cascading deletions (`prisma.$transaction`), paginated check queries, and 24-hour groupBy metrics aggregation.
 - **`IncidentRepository` (`incident.repository.ts`)**: Outage record creation, incident timeline event logging, status transitions (`OPEN`, `RECOVERING`, `RESOLVED`), and paginated incident listing.
 - **`DashboardRepository` (`dashboard.repository.ts`)**: Parallel aggregate count queries (total monitors, UP, DOWN, PAUSED status counts, open incidents, and 24-hour average latency).
 
+No raw Prisma queries are permitted in Express controllers or routes.
 ### 1.2 Referential Integrity & Deletion Strategy
 The database schema intentionally enforces **`onDelete: Restrict`** on all core relational constraints (except refresh tokens) to prevent accidental cascading data loss. When a monitor is removed, `MonitorRepository.delete(id)` coordinates an explicit, ordered database transaction (`prisma.$transaction`) that systematically purges dependent records (`incident_events`, `incidents`, `monitor_checks`, `monitoring_occurrences`, and aggregates) before deleting the root monitor row. Conversely, `refresh_tokens` use database-level **`onDelete: Cascade`** tied to `users(id)` so account deletion immediately invalidates all active sessions.
 
@@ -29,16 +41,25 @@ The database schema intentionally enforces **`onDelete: Restrict`** on all core 
 
 ```mermaid
 erDiagram
+    users ||--o{ monitors : "owns"
+    users ||--o{ refresh_tokens : "authenticates"
     users ||--o{ refresh_tokens : "authenticates (Cascade)"
     users ||--o{ monitors : "owns (Restrict)"
 
+    monitors ||--o{ monitoring_occurrences : "schedules"
+    monitors ||--o{ monitor_checks : "records"
+    monitoring_occurrences ||--o| monitor_checks : "produces"
     monitors ||--o{ monitoring_occurrences : "schedules (Restrict)"
     monitors ||--o{ monitor_checks : "records (Restrict)"
     monitoring_occurrences ||--o| monitor_checks : "produces (Restrict, 1:1)"
 
+    monitors ||--o{ incidents : "triggers"
+    incidents ||--o{ incident_events : "logs"
     monitors ||--o{ incidents : "triggers (Restrict)"
     incidents ||--o{ incident_events : "logs (Restrict)"
 
+    monitors ||--o{ monitor_hourly_aggregates : "summarizes"
+    monitors ||--o{ monitor_daily_aggregates : "summarizes"
     monitors ||--o{ monitor_hourly_aggregates : "summarizes (Restrict)"
     monitors ||--o{ monitor_daily_aggregates : "summarizes (Restrict)"
 
@@ -166,12 +187,20 @@ erDiagram
 
 ---
 
+## 3. Custom Database Enums
 ## 3. PostgreSQL Enums
 
+| Enum Name | Allowed Values | Description |
 The schema registers six custom PostgreSQL ENUM types defined in `packages/database/prisma/schema.prisma`:
 
 | Enum Name | Defined Values | Usage Description |
 | :--- | :--- | :--- |
+| **`MonitorStatus`** | `UNKNOWN`, `UP`, `DOWN`, `PAUSED` | Health status of an endpoint. |
+| **`MonitorMethod`** | `GET`, `HEAD` | Supported HTTP probing methods. |
+| **`OccurrenceStatus`** | `PENDING`, `QUEUED`, `PROCESSING`, `COMPLETED`, `SKIPPED`, `FAILED` | State of a scheduled check occurrence. |
+| **`IncidentStatus`** | `OPEN`, `RECOVERING`, `RESOLVED` | Lifecycle state of an outage incident. |
+| **`IncidentEventType`** | `INCIDENT_OPENED`, `RECOVERY_STARTED`, `INCIDENT_REOPENED`, `INCIDENT_RESOLVED` | Transition event type in an incident. |
+| **`OutboxStatus`** | `PENDING`, `PROCESSING`, `PUBLISHED`, `FAILED` | Transactional outbox event delivery status. |
 | **`MonitorStatus`** | `UNKNOWN`, `UP`, `DOWN`, `PAUSED` | Operational health state of a monitor. Defaults to `UNKNOWN`. |
 | **`MonitorMethod`** | `GET`, `HEAD` | Supported HTTP probing verbs. Defaults to `GET`. |
 | **`OccurrenceStatus`** | `PENDING`, `QUEUED`, `PROCESSING`, `COMPLETED`, `SKIPPED`, `FAILED` | Lifecycle state of a scheduled execution occurrence slot. Defaults to `PENDING`. |
@@ -184,6 +213,14 @@ The schema registers six custom PostgreSQL ENUM types defined in `packages/datab
 ## 4. Comprehensive Table Specifications
 
 ### 4.1 `users`
+Stores tenant accounts and Argon2id password hashes.
+- `id`: `UUID` (Primary Key).
+- `name`: `VARCHAR(100)` (Full name).
+- `email`: `VARCHAR(255)` (Unique tenant email).
+- `password_hash`: `TEXT` (Argon2id cryptographic hash).
+- `email_verified_at`: `TIMESTAMPTZ(6)` (Nullable).
+- `created_at` / `updated_at`: `TIMESTAMPTZ(6)`.
+- **Relationships**: Has many `monitors` (`onDelete: Restrict`), has many `refresh_tokens` (`onDelete: Cascade`).
 Persists tenant operator identity and Argon2id password hashes.
 
 - **Prisma Model:** `User`
@@ -208,6 +245,13 @@ Persists tenant operator identity and Argon2id password hashes.
 ---
 
 ### 4.2 `refresh_tokens`
+Stores HMAC-SHA256 hashed refresh tokens to support token rotation and reuse revocation.
+- `id`: `UUID` (Primary Key).
+- `user_id`: `UUID` (Foreign Key -> `users(id)`).
+- `token_hash`: `TEXT` (Unique hash of raw refresh token).
+- `expires_at`: `TIMESTAMPTZ(6)` (Expiration date).
+- `revoked_at`: `TIMESTAMPTZ(6)` (Nullable revocation timestamp).
+- `created_at`: `TIMESTAMPTZ(6)`.
 Stores HMAC-SHA256 hashes of issued refresh tokens to enable secure session rotation and detect reuse.
 
 - **Prisma Model:** `RefreshToken`
@@ -232,6 +276,18 @@ Stores HMAC-SHA256 hashes of issued refresh tokens to enable secure session rota
 ---
 
 ### 4.3 `monitors`
+Monitored endpoint definitions, intervals, and health states.
+- `id`: `UUID` (Primary Key).
+- `user_id`: `UUID` (Foreign Key -> `users(id)`).
+- `name`: `VARCHAR(100)`.
+- `url`: `TEXT`.
+- `method`: `MonitorMethod` (Default `GET`).
+- `interval_seconds`: `INT` (Default `60`).
+- `timeout_ms`: `INT` (Default `10000`).
+- `expected_status_code`: `INT` (Default `200`).
+- `enabled`: `BOOLEAN` (Default `true`).
+- `status`: `MonitorStatus` (Default `UNKNOWN`).
+- `next_check_at`: `TIMESTAMPTZ(6)` (Indexed for scheduler hot path).
 Defines HTTP probe target configurations, execution cadences, expected response status codes, and current health status.
 
 - **Prisma Model:** `Monitor`
@@ -270,6 +326,13 @@ Defines HTTP probe target configurations, execution cadences, expected response 
 ---
 
 ### 4.4 `monitoring_occurrences`
+Discrete execution slots and distributed worker lease locks.
+- `id`: `UUID` (Primary Key).
+- `monitor_id`: `UUID` (Foreign Key -> `monitors(id)`).
+- `scheduled_at`: `TIMESTAMPTZ(6)`.
+- `status`: `OccurrenceStatus` (Default `PENDING`).
+- `claimed_at`, `lease_expires_at`, `completed_at`: `TIMESTAMPTZ(6)`.
+- **Unique Constraint**: `(monitor_id, scheduled_at)` prevents duplicate executions.
 Represents discrete scheduled execution slots for monitor checks. Implements distributed lease locking to coordinate probe worker concurrency and prevent duplicate executions.
 
 - **Prisma Model:** `MonitoringOccurrence`
@@ -300,6 +363,16 @@ Represents discrete scheduled execution slots for monitor checks. Implements dis
 ---
 
 ### 4.5 `monitor_checks`
+Probe execution results, status codes, and latency logs.
+- `id`: `UUID` (Primary Key).
+- `monitor_id`: `UUID` (Foreign Key -> `monitors(id)`).
+- `occurrence_id`: `UUID` (Foreign Key -> `monitoring_occurrences(id)`, Unique).
+- `status_code`: `INT` (Nullable).
+- `response_time_ms`: `INT` (Nullable).
+- `is_success`: `BOOLEAN`.
+- `error_type`: `VARCHAR(50)` (Nullable, e.g. `ETIMEDOUT`, `SSRF_BLOCKED`).
+- `error_message`: `TEXT` (Nullable).
+- `checked_at`: `TIMESTAMPTZ(6)`.
 Raw execution telemetry, HTTP status codes, latency timings, and failure reasons logged for every completed probe.
 
 - **Prisma Model:** `MonitorCheck`
@@ -334,6 +407,13 @@ Raw execution telemetry, HTTP status codes, latency timings, and failure reasons
 ---
 
 ### 4.6 `incidents`
+Records service outages triggered after 3 consecutive failures.
+- `id`: `UUID` (Primary Key).
+- `monitor_id`: `UUID` (Foreign Key -> `monitors(id)`).
+- `title`: `VARCHAR(255)`.
+- `description`: `TEXT` (Nullable).
+- `status`: `IncidentStatus` (Default `OPEN`).
+- `started_at`, `resolved_at`: `TIMESTAMPTZ(6)`.
 Tracks service downtime periods and outages triggered by the worker's incident hysteresis engine.
 
 - **Prisma Model:** `Incident`
@@ -363,6 +443,12 @@ Tracks service downtime periods and outages triggered by the worker's incident h
 ---
 
 ### 4.7 `incident_events`
+Audit trail of incident transitions (`OPENED`, `RECOVERY_STARTED`, `REOPENED`, `RESOLVED`).
+- `id`: `UUID` (Primary Key).
+- `incident_id`: `UUID` (Foreign Key -> `incidents(id)`).
+- `event_type`: `IncidentEventType`.
+- `message`: `TEXT`.
+- `metadata`: `JSON` (Nullable).
 Audit trail recording every state transition, failure escalation, or recovery step during an incident's lifecycle.
 
 - **Prisma Model:** `IncidentEvent`
@@ -387,6 +473,8 @@ Audit trail recording every state transition, failure escalation, or recovery st
 ---
 
 ### 4.8 `monitor_hourly_aggregates` & `monitor_daily_aggregates`
+Pre-aggregated rollups powering fast charts and long-term uptime analytics.
+- Unique index on `(monitor_id, bucket_start)`.
 Pre-aggregated rollups calculated over one-hour and one-day intervals. Powers long-range dashboard charts without running expensive aggregate calculations over millions of raw check rows.
 
 - **Prisma Models:** `MonitorHourlyAggregate`, `MonitorDailyAggregate`
@@ -417,6 +505,15 @@ Pre-aggregated rollups calculated over one-hour and one-day intervals. Powers lo
 ---
 
 ### 4.9 `outbox_events`
+Transactional outbox staging table ensuring guaranteed event publication (e.g. Slack webhook alerts).
+- `id`: `UUID` (Primary Key).
+- `aggregate_type`: `VARCHAR(100)`.
+- `aggregate_id`: `UUID`.
+- `event_type`: `VARCHAR(100)`.
+- `payload`: `JSON`.
+- `status`: `OutboxStatus` (Default `PENDING`).
+- `attempts`: `INT` (Default `0`).
+- `available_at`, `published_at`, `created_at`: `TIMESTAMPTZ(6)`.
 Implements the Transactional Outbox pattern. Guarantees that external notification events (such as Slack alerts) are written to the database atomically within the incident state transition transaction before delivery is attempted.
 
 - **Prisma Model:** `OutboxEvent`
@@ -443,8 +540,18 @@ Implements the Transactional Outbox pattern. Guarantees that external notificati
 
 ---
 
+## 5. Migration Strategy
 ## 5. Critical Database Flows & Design Choices
 
+1. **Prisma Generation**:
+   ```bash
+   npm run db:generate
+   ```
+2. **Schema Synchronization**:
+   ```bash
+   npm run db:push
+   ```
+3. **Audit History**: Obsolete notification tables and enums (`notification_channels`, `notification_deliveries`) have been pruned.
 ### 5.1 Controlled Cascading Deletion Transaction
 Because Prisma models configure `onDelete: Restrict`, deleting a `Monitor` directly via a standard SQL `DELETE FROM monitors WHERE id = ?` fails if dependent checks, incidents, or occurrences exist. `MonitorRepository.delete(id)` in `backend/src/repositories/monitor.repository.ts` manages this through an atomic `prisma.$transaction`:
 
