@@ -1,6 +1,6 @@
 services:
   # ---------------------------------------------------------------------------
-  # 1. Express REST API Backend (Includes Embedded Scheduler & Probe Worker)
+  # PulseWatch Express REST API Backend (Includes Embedded Scheduler & Probe Worker)
   # ---------------------------------------------------------------------------
   - type: web
     name: pulsewatch-backend
@@ -30,22 +30,4 @@ services:
       - key: ENABLE_EMBEDDED_WORKERS
         value: "true"
       - key: SLACK_WEBHOOK_URL
-        sync: false
-
-  # ---------------------------------------------------------------------------
-  # 2. Next.js Web Frontend
-  # ---------------------------------------------------------------------------
-  - type: web
-    name: pulsewatch-frontend
-    runtime: docker
-    dockerfilePath: frontend/Dockerfile
-    dockerContext: .
-    plan: free
-    region: oregon
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: PORT
-        value: 3000
-      - key: NEXT_PUBLIC_API_URL
         sync: false
