@@ -18,7 +18,7 @@ export function createApp(): Express {
   // CORS configuration
   const allowedOrigins = [
     config.WEB_ORIGIN,
-     process.env.CORS_ORIGIN,
+    process.env.CORS_ORIGIN,
     'http://localhost:3000',
     'http://127.0.0.1:3000',
   ].filter(Boolean) as string[];
@@ -51,9 +51,9 @@ export function createApp(): Express {
   // Root health endpoints (for docker and orchestrator probes)
   app.use('/', healthRoutes);
 
-  // API v1 routes (with /api/vi alias for Roman numeral / keyboard typo)
+  // API v1 routes
   app.use('/api/v1', routes);
-  app.use('/api/vi', routes);
+
 
   // 404 handler
   app.use(notFoundHandler);
