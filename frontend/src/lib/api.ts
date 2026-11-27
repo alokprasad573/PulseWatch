@@ -6,7 +6,9 @@ import {
   IncidentDto,
   MonitorAnalyticsDto,
   MonitorCheckDto,
+  MonitorChecksSort,
   MonitorDto,
+  MonitorMetricsRange,
   PaginationMeta,
   UpdateMonitorInput,
   UserDto,
@@ -136,10 +138,21 @@ export const api = {
       apiRequest<MonitorDto>(`/monitors/${id}/disable`, { method: 'PATCH' }),
     delete: (id: string) =>
       apiRequest(`/monitors/${id}`, { method: 'DELETE' }),
-    getChecks: (id: string, limit = 50) =>
-      apiRequest<MonitorCheckDto[]>(`/monitors/${id}/checks?limit=${limit}`),
-    getMetrics: (id: string) =>
-      apiRequest<MonitorAnalyticsDto>(`/monitors/${id}/metrics`),
+    getChecks: (
+      id: string,
+      params: { page?: number; limit?: number; sort?: MonitorChecksSort } = {},
+    ) => {
+      const search = new URLSearchParams();
+      if (params.page !== undefined) search.set('page', String(params.page));
+      if (params.limit !== undefined) search.set('limit', String(params.limit));
+      if (params.sort !== undefined) search.set('sort', params.sort);
+      const qs = search.toString();
+      return apiRequest<MonitorCheckDto[]>(`/monitors/${id}/checks${qs ? `?${qs}` : ''}`);
+    },
+    getMetrics: (id: string, range: MonitorMetricsRange = '1d') =>
+      apiRequest<MonitorAnalyticsDto>(
+        `/monitors/${id}/metrics?range=${encodeURIComponent(range)}`,
+      ),
   },
   incidents: {
     list: (page = 1, limit = 20, status?: string) =>

@@ -1,7 +1,13 @@
 import { Router } from 'express';
 import { MonitorController } from '../controllers/monitor.controller';
 import { validate } from '../middlewares/validate.middleware';
-import { createMonitorSchema, updateMonitorSchema, monitorQuerySchema } from '../validators/monitor.validator';
+import {
+  createMonitorSchema,
+  updateMonitorSchema,
+  monitorQuerySchema,
+  monitorChecksQuerySchema,
+  monitorMetricsQuerySchema,
+} from '../validators/monitor.validator';
 import { authenticate } from '../middlewares/auth.middleware';
 
 const router = Router();
@@ -16,7 +22,7 @@ router.patch('/:id', validate(updateMonitorSchema), controller.update);
 router.patch('/:id/enable', controller.enable);
 router.patch('/:id/disable', controller.disable);
 router.delete('/:id', controller.remove);
-router.get('/:id/checks', controller.getChecks);
-router.get('/:id/metrics', controller.getMetrics);
+router.get('/:id/checks', validate(monitorChecksQuerySchema, 'query'), controller.getChecks);
+router.get('/:id/metrics', validate(monitorMetricsQuerySchema, 'query'), controller.getMetrics);
 
 export default router;

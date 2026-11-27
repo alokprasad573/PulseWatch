@@ -345,6 +345,49 @@ async function runTestSuite() {
     assert(summary.overallUptime24h > 0 && summary.overallUptime24h <= 100, `Uptime 24h calculated accurately: ${summary.overallUptime24h}%`);
     assert(summary.recentChecks.length > 0, 'Dashboard includes recent check stream');
 
+    // ----------------------------------------------------
+    // TEST SUITE 7: RANGE METRICS & CHECK PAGINATION/SORT
+    // ----------------------------------------------------
+    console.log('\n--- SUITE 7: RANGE METRICS & CHECK PAGINATION/SORT ---');
+
+    const olderOcc1 = await prisma.monitoringOccurrence.create({
+      data: { monitorId: monitorA.id, scheduledAt: new Date(Date.now() - 45 * 86400000), status: 'COMPLETED' },
+    });
+    await prisma.monitorCheck.create({
+      data: { monitorId: monitorA.id, occurrenceId: olderOcc1.id, isSuccess: true, statusCode: 200, responseTimeMs: 210, checkedAt: new Date(Date.now() - 45 * 86400000) },
+    });
+
+    const olderOcc2 = await prisma.monitoringOccurrence.create({
+      data: { monitorId: monitorA.id, scheduledAt: new Date(Date.now() - 220 * 86400000), status: 'COMPLETED' },
+    });
+    await prisma.monitorCheck.create({
+      data: { monitorId: monitorA.id, occurrenceId: olderOcc2.id, isSuccess: true, statusCode: 200, responseTimeMs: 310, checkedAt: new Date(Date.now() - 220 * 86400000) },
+    });
+
+    const m1d = await monitorsService.getMetrics(regResA.tokens.user.id, monitorA.id, '1d');
+    const m3m = await monitorsService.getMetrics(regResA.tokens.user.id, monitorA.id, '3m');
+    const m9m = await monitorsService.getMetrics(regResA.tokens.user.id, monitorA.id, '9m');
+    const mLife = await monitorsService.getMetrics(regResA.tokens.user.id, monitorA.id, 'lifetime');
+    assert(m1d.rangeStats?.totalChecks === 7, `1d range returns 7 recent checks (got ${m1d.rangeStats?.totalChecks})`);
+    assert(m3m.rangeStats?.totalChecks === 8, `3m range includes 45-day check (got ${m3m.rangeStats?.totalChecks})`);
+    assert(m9m.rangeStats?.totalChecks === 9 && mLife.rangeStats?.totalChecks === 9, '9m and lifetime include 220-day check');
+
+    const newestPage1 = await monitorsService.getChecks(regResA.tokens.user.id, monitorA.id, 1, 3, 'newest');
+    const newestPage2 = await monitorsService.getChecks(regResA.tokens.user.id, monitorA.id, 2, 3, 'newest');
+    const oldestPage1 = await monitorsService.getChecks(regResA.tokens.user.id, monitorA.id, 1, 3, 'oldest');
+    assert(
+      newestPage1.meta.total === 9 && newestPage1.meta.totalPages === 3 && newestPage1.data.length === 3,
+      'Checks pagination returns accurate meta totals and page size'
+    );
+    assert(
+      new Date(newestPage1.data[0].checkedAt).getTime() >= new Date(newestPage2.data[0].checkedAt).getTime(),
+      'Newest sort orders page 1 ahead of page 2'
+    );
+    assert(
+      new Date(oldestPage1.data[0].checkedAt).getTime() <= new Date(oldestPage1.data[1].checkedAt).getTime(),
+      'Oldest sort orders checks in ascending chronological order'
+    );
+
     // Clean up test data
     await prisma.$transaction([
       prisma.monitorCheck.deleteMany({ where: { monitorId: monitorA.id } }),

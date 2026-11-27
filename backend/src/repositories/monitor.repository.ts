@@ -1,5 +1,36 @@
-import { prisma } from '@pulsewatch/database';
+import { prisma, Prisma } from '@pulsewatch/database';
+import { MonitorChecksSort, MonitorMetricsPointDto } from '@pulsewatch/shared';
 import { CreateMonitorSchemaInput, UpdateMonitorSchemaInput } from '../validators/monitor.validator';
+
+const BUCKET_STEP_SECONDS = [
+  60,
+  300,
+  900,
+  1800,
+  3600,
+  7200,
+  14400,
+  21600,
+  43200,
+  86400,
+  172800,
+  259200,
+  604800,
+  1209600,
+  2592000,
+];
+
+const RAW_HISTORY_LIMIT = 150;
+const TARGET_MAX_BUCKETS = 96;
+
+function selectBucketSeconds(spanSeconds: number): number {
+  for (const step of BUCKET_STEP_SECONDS) {
+    if (spanSeconds / step <= TARGET_MAX_BUCKETS) {
+      return step;
+    }
+  }
+  return BUCKET_STEP_SECONDS[BUCKET_STEP_SECONDS.length - 1];
+}
 
 export class MonitorRepository {
   async create(userId: string, data: CreateMonitorSchemaInput) {
@@ -127,15 +158,34 @@ export class MonitorRepository {
     ]);
   }
 
-  async findChecks(monitorId: string, limit: number = 50) {
-    return prisma.monitorCheck.findMany({
-      where: { monitorId },
-      orderBy: { checkedAt: 'desc' },
-      take: Math.min(limit, 200),
-    });
+  async findChecks(
+    monitorId: string,
+    skip: number = 0,
+    take: number = 20,
+    sort: MonitorChecksSort = 'newest'
+  ) {
+    const direction = sort === 'oldest' ? 'asc' : 'desc';
+
+    const [total, checks] = await Promise.all([
+      prisma.monitorCheck.count({ where: { monitorId } }),
+      prisma.monitorCheck.findMany({
+        where: { monitorId },
+        orderBy: [{ checkedAt: direction }, { id: direction }],
+        skip,
+        take,
+      }),
+    ]);
+
+    return { total, checks };
   }
 
-  async getMetrics(monitorId: string, d24h: Date, d7d: Date, d30d: Date) {
+  async getMetrics(
+    monitorId: string,
+    rangeStart: Date | null,
+    d24h: Date,
+    d7d: Date,
+    d30d: Date
+  ) {
     const calcUptime = async (since: Date) => {
       const [total, success] = await Promise.all([
         prisma.monitorCheck.count({
@@ -149,29 +199,132 @@ export class MonitorRepository {
       return Number(((success / total) * 100).toFixed(2));
     };
 
-    const [uptime24h, uptime7d, uptime30d, responseTimeStats, history] = await Promise.all([
-      calcUptime(d24h),
-      calcUptime(d7d),
-      calcUptime(d30d),
-      prisma.monitorCheck.aggregate({
-        where: { monitorId, checkedAt: { gte: d24h }, responseTimeMs: { not: null } },
-        _avg: { responseTimeMs: true },
-        _min: { responseTimeMs: true },
-        _max: { responseTimeMs: true },
-      }),
-      prisma.monitorCheck.findMany({
-        where: { monitorId, checkedAt: { gte: d24h } },
-        orderBy: { checkedAt: 'asc' },
-        take: 100,
+    const rangeWhere = rangeStart
+      ? { monitorId, checkedAt: { gte: rangeStart } }
+      : { monitorId };
+
+    const [uptime24h, uptime7d, uptime30d, responseTimeStats, rangeAggregate, rangeSuccessCount] =
+      await Promise.all([
+        calcUptime(d24h),
+        calcUptime(d7d),
+        calcUptime(d30d),
+        prisma.monitorCheck.aggregate({
+          where: { monitorId, checkedAt: { gte: d24h }, responseTimeMs: { not: null } },
+          _avg: { responseTimeMs: true },
+          _min: { responseTimeMs: true },
+          _max: { responseTimeMs: true },
+        }),
+        prisma.monitorCheck.aggregate({
+          where: rangeWhere,
+          _count: { id: true },
+          _avg: { responseTimeMs: true },
+          _min: { checkedAt: true, responseTimeMs: true },
+          _max: { checkedAt: true, responseTimeMs: true },
+        }),
+        prisma.monitorCheck.count({
+          where: { ...rangeWhere, isSuccess: true },
+        }),
+      ]);
+
+    const totalInRange = rangeAggregate._count.id;
+    let bucketSeconds: number | null = null;
+    let history: MonitorMetricsPointDto[] = [];
+
+    if (totalInRange > 0 && totalInRange <= RAW_HISTORY_LIMIT) {
+      const rawChecks = await prisma.monitorCheck.findMany({
+        where: rangeWhere,
+        orderBy: [{ checkedAt: 'asc' }, { id: 'asc' }],
         select: {
           checkedAt: true,
           responseTimeMs: true,
           isSuccess: true,
           statusCode: true,
         },
-      }),
-    ]);
+      });
 
-    return { uptime24h, uptime7d, uptime30d, responseTimeStats, history };
+      history = rawChecks.map((h) => ({
+        timestamp: h.checkedAt.toISOString(),
+        responseTimeMs: h.responseTimeMs,
+        isSuccess: h.isSuccess,
+        statusCode: h.statusCode,
+        sampleCount: 1,
+        successRate: h.isSuccess ? 100 : 0,
+      }));
+    } else if (totalInRange > RAW_HISTORY_LIMIT && rangeAggregate._min.checkedAt && rangeAggregate._max.checkedAt) {
+      const spanSeconds = Math.max(
+        1,
+        Math.floor(
+          (rangeAggregate._max.checkedAt.getTime() - rangeAggregate._min.checkedAt.getTime()) / 1000
+        )
+      );
+      bucketSeconds = selectBucketSeconds(spanSeconds);
+
+      const sinceClause = rangeStart
+        ? Prisma.sql`AND checked_at >= ${rangeStart}`
+        : Prisma.empty;
+
+      const bucketedRows = await prisma.$queryRaw<
+        Array<{
+          bucket_epoch: number;
+          avg_ms: number | null;
+          min_ms: number | null;
+          max_ms: number | null;
+          total_count: bigint;
+          success_count: bigint;
+          latest_status_code: number | null;
+        }>
+      >`
+        SELECT
+          bucket_epoch,
+          ROUND(AVG(response_time_ms))::integer AS avg_ms,
+          MIN(response_time_ms)::integer AS min_ms,
+          MAX(response_time_ms)::integer AS max_ms,
+          COUNT(*)::bigint AS total_count,
+          COUNT(*) FILTER (WHERE is_success = true)::bigint AS success_count,
+          (ARRAY_AGG(status_code ORDER BY checked_at DESC))[1] AS latest_status_code
+        FROM (
+          SELECT
+            (FLOOR(EXTRACT(EPOCH FROM checked_at) / ${bucketSeconds}) * ${bucketSeconds})::double precision AS bucket_epoch,
+            response_time_ms,
+            is_success,
+            status_code,
+            checked_at
+          FROM monitor_checks
+          WHERE monitor_id = ${monitorId}::uuid
+          ${sinceClause}
+        ) AS bucketed
+        GROUP BY bucket_epoch
+        ORDER BY bucket_epoch ASC
+      `;
+
+      history = bucketedRows.map((row) => {
+        const sampleCount = Number(row.total_count);
+        const successCount = Number(row.success_count);
+        const successRate =
+          sampleCount > 0 ? Number(((successCount / sampleCount) * 100).toFixed(1)) : 100;
+
+        return {
+          timestamp: new Date(row.bucket_epoch * 1000).toISOString(),
+          responseTimeMs: row.avg_ms,
+          minResponseTimeMs: row.min_ms,
+          maxResponseTimeMs: row.max_ms,
+          isSuccess: successCount === sampleCount,
+          statusCode: row.latest_status_code,
+          sampleCount,
+          successRate,
+        };
+      });
+    }
+
+    return {
+      uptime24h,
+      uptime7d,
+      uptime30d,
+      responseTimeStats,
+      rangeAggregate,
+      rangeSuccessCount,
+      bucketSeconds,
+      history,
+    };
   }
 }

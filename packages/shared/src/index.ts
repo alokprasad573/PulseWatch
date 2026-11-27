@@ -193,18 +193,52 @@ export interface DashboardSummaryDto {
   recentChecks: MonitorCheckDto[];
 }
 
+export type MonitorMetricsRange =
+  | '1d'
+  | '7d'
+  | '30d'
+  | '3m'
+  | '6m'
+  | '9m'
+  | '12m'
+  | 'lifetime';
+
+export type MonitorChecksSort = 'newest' | 'oldest';
+
+export interface MonitorMetricsPointDto {
+  timestamp: string;
+  responseTimeMs: number | null;
+  isSuccess: boolean;
+  statusCode: number | null;
+  minResponseTimeMs?: number | null;
+  maxResponseTimeMs?: number | null;
+  sampleCount?: number;
+  successRate?: number;
+}
+
+export interface MonitorRangeStatsDto {
+  range: MonitorMetricsRange;
+  totalChecks: number;
+  successfulChecks: number;
+  failedChecks: number;
+  uptime: number;
+  avgResponseTimeMs: number;
+  minResponseTimeMs: number;
+  maxResponseTimeMs: number;
+  bucketSeconds: number | null;
+  startAt: string | null;
+  endAt: string | null;
+}
+
 export interface MonitorAnalyticsDto {
   monitorId: string;
+  range?: MonitorMetricsRange;
   uptime24h: number;
   uptime7d: number;
   uptime30d: number;
   avgResponseTime24h: number;
   minResponseTime24h: number;
   maxResponseTime24h: number;
-  history: Array<{
-    timestamp: string;
-    responseTimeMs: number | null;
-    isSuccess: boolean;
-    statusCode: number | null;
-  }>;
+  rangeStats?: MonitorRangeStatsDto;
+  history: MonitorMetricsPointDto[];
 }

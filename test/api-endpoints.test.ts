@@ -1,4 +1,8 @@
 import { createApp } from '../backend/src/app';
+import {
+  monitorChecksQuerySchema,
+  monitorMetricsQuerySchema,
+} from '../backend/src/validators/monitor.validator';
 import { Server } from 'http';
 import { AddressInfo } from 'net';
 
@@ -226,6 +230,39 @@ async function runEndpointTests() {
 
     const monitorsMetricsRes = await fetch(`${baseUrl}/api/v1/monitors/test-id/metrics`);
     assert(monitorsMetricsRes.status === 401, 'GET /api/v1/monitors/:id/metrics requires auth (401)');
+
+    // 3.1b Monitor Query Schema Contracts (chart ranges, check pagination & sort)
+    const validRanges = ['1d', '7d', '30d', '3m', '6m', '9m', '12m', 'lifetime'] as const;
+    const allRangesAccepted = validRanges.every(
+      (r) => monitorMetricsQuerySchema.safeParse({ range: r }).success
+    );
+    assert(
+      allRangesAccepted && !monitorMetricsQuerySchema.safeParse({ range: '2y' }).success,
+      'monitorMetricsQuerySchema accepts all 8 chart ranges and rejects unsupported values'
+    );
+
+    const parsedChecksDefault = monitorChecksQuerySchema.safeParse({});
+    const parsedChecksOldest = monitorChecksQuerySchema.safeParse({
+      page: '2',
+      limit: '10',
+      sort: 'oldest',
+    });
+    const invalidChecksQuery = monitorChecksQuerySchema.safeParse({
+      page: '0',
+      sort: 'random',
+    });
+    assert(
+      parsedChecksDefault.success &&
+        parsedChecksDefault.data.page === 1 &&
+        parsedChecksDefault.data.limit === 20 &&
+        parsedChecksDefault.data.sort === 'newest' &&
+        parsedChecksOldest.success &&
+        parsedChecksOldest.data.page === 2 &&
+        parsedChecksOldest.data.limit === 10 &&
+        parsedChecksOldest.data.sort === 'oldest' &&
+        !invalidChecksQuery.success,
+      'monitorChecksQuerySchema validates pagination and newest/oldest sort options'
+    );
 
     // 3.2 Incidents Module
     const incidentsListRes = await fetch(`${baseUrl}/api/v1/incidents`);

@@ -1,4 +1,5 @@
 import { Response, NextFunction } from 'express';
+import { MonitorChecksSort, MonitorMetricsRange } from '@pulsewatch/shared';
 import { MonitorService } from '../services/monitor.service';
 import { sendSuccess } from '../utils/response';
 import { AuthenticatedRequest } from '../types';
@@ -80,9 +81,11 @@ export class MonitorController {
   getChecks = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = String(req.params.id);
-      const limit = parseInt(req.query.limit as string, 10) || 50;
-      const checks = await this.monitorService.getChecks(req.user!.id, id, limit);
-      sendSuccess(res, 'Monitor checks retrieved successfully', checks, 200);
+      const page = parseInt(req.query.page as string, 10) || 1;
+      const limit = parseInt(req.query.limit as string, 10) || 20;
+      const sort = (req.query.sort === 'oldest' ? 'oldest' : 'newest') as MonitorChecksSort;
+      const result = await this.monitorService.getChecks(req.user!.id, id, page, limit, sort);
+      sendSuccess(res, 'Monitor checks retrieved successfully', result.data, 200, result.meta);
     } catch (error) {
       next(error);
     }
@@ -91,7 +94,8 @@ export class MonitorController {
   getMetrics = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = String(req.params.id);
-      const metrics = await this.monitorService.getMetrics(req.user!.id, id);
+      const range = (req.query.range as MonitorMetricsRange) || '1d';
+      const metrics = await this.monitorService.getMetrics(req.user!.id, id, range);
       sendSuccess(res, 'Monitor metrics retrieved successfully', metrics, 200);
     } catch (error) {
       next(error);

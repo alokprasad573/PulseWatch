@@ -1,7 +1,48 @@
 import { MonitorRepository } from '../repositories/monitor.repository';
 import { CreateMonitorSchemaInput, UpdateMonitorSchemaInput } from '../validators/monitor.validator';
-import { MonitorDto, PaginationMeta } from '@pulsewatch/shared';
+import {
+  MonitorAnalyticsDto,
+  MonitorCheckDto,
+  MonitorChecksSort,
+  MonitorDto,
+  MonitorMetricsRange,
+  PaginationMeta,
+} from '@pulsewatch/shared';
 import { NotFoundError, ForbiddenError } from '../utils/errors';
+
+function subtractUtcMonths(date: Date, months: number): Date {
+  const result = new Date(date);
+  const originalDay = result.getUTCDate();
+  result.setUTCDate(1);
+  result.setUTCMonth(result.getUTCMonth() - months);
+  const lastDayOfMonth = new Date(
+    Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0)
+  ).getUTCDate();
+  result.setUTCDate(Math.min(originalDay, lastDayOfMonth));
+  return result;
+}
+
+function resolveRangeStart(range: MonitorMetricsRange, now: Date): Date | null {
+  switch (range) {
+    case '1d':
+      return new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    case '7d':
+      return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    case '30d':
+      return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    case '3m':
+      return subtractUtcMonths(now, 3);
+    case '6m':
+      return subtractUtcMonths(now, 6);
+    case '9m':
+      return subtractUtcMonths(now, 9);
+    case '12m':
+      return subtractUtcMonths(now, 12);
+    case 'lifetime':
+    default:
+      return null;
+  }
+}
 
 export class MonitorService {
   constructor(private monitorRepo: MonitorRepository = new MonitorRepository()) {}
@@ -138,51 +179,102 @@ export class MonitorService {
     await this.monitorRepo.delete(id);
   }
 
-  async getChecks(userId: string, id: string, limit: number = 50) {
-    await this.findOne(userId, id);
-    const checks = await this.monitorRepo.findChecks(id, limit);
-
-    return checks.map((c) => ({
-      id: c.id,
-      monitorId: c.monitorId,
-      occurrenceId: c.occurrenceId,
-      statusCode: c.statusCode,
-      responseTimeMs: c.responseTimeMs,
-      isSuccess: c.isSuccess,
-      errorType: c.errorType,
-      errorMessage: c.errorMessage,
-      checkedAt: c.checkedAt.toISOString(),
-      createdAt: c.createdAt.toISOString(),
-    }));
-  }
-
-  async getMetrics(userId: string, id: string) {
+  async getChecks(
+    userId: string,
+    id: string,
+    page: number = 1,
+    limit: number = 20,
+    sort: MonitorChecksSort = 'newest'
+  ): Promise<{ data: MonitorCheckDto[]; meta: PaginationMeta }> {
     await this.findOne(userId, id);
 
-    const now = Date.now();
-    const d24h = new Date(now - 24 * 60 * 60 * 1000);
-    const d7d = new Date(now - 7 * 24 * 60 * 60 * 1000);
-    const d30d = new Date(now - 30 * 24 * 60 * 60 * 1000);
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.min(Math.max(1, limit), 200);
+    const skip = (safePage - 1) * safeLimit;
 
-    const { uptime24h, uptime7d, uptime30d, responseTimeStats, history } =
-      await this.monitorRepo.getMetrics(id, d24h, d7d, d30d);
+    const { total, checks } = await this.monitorRepo.findChecks(id, skip, safeLimit, sort);
 
     return {
-      monitorId: id,
+      data: checks.map((c) => ({
+        id: c.id,
+        monitorId: c.monitorId,
+        occurrenceId: c.occurrenceId,
+        statusCode: c.statusCode,
+        responseTimeMs: c.responseTimeMs,
+        isSuccess: c.isSuccess,
+        errorType: c.errorType,
+        errorMessage: c.errorMessage,
+        checkedAt: c.checkedAt.toISOString(),
+        createdAt: c.createdAt.toISOString(),
+      })),
+      meta: {
+        page: safePage,
+        limit: safeLimit,
+        total,
+        totalPages: Math.ceil(total / safeLimit) || 1,
+      },
+    };
+  }
+
+  async getMetrics(
+    userId: string,
+    id: string,
+    range: MonitorMetricsRange = '1d'
+  ): Promise<MonitorAnalyticsDto> {
+    await this.findOne(userId, id);
+
+    const now = new Date();
+    const nowMs = now.getTime();
+    const d24h = new Date(nowMs - 24 * 60 * 60 * 1000);
+    const d7d = new Date(nowMs - 7 * 24 * 60 * 60 * 1000);
+    const d30d = new Date(nowMs - 30 * 24 * 60 * 60 * 1000);
+    const rangeStart = resolveRangeStart(range, now);
+
+    const {
       uptime24h,
       uptime7d,
       uptime30d,
-      avgResponseTime24h: responseTimeStats._avg.responseTimeMs
-        ? Math.round(responseTimeStats._avg.responseTimeMs)
-        : 0,
+      responseTimeStats,
+      rangeAggregate,
+      rangeSuccessCount,
+      bucketSeconds,
+      history,
+    } = await this.monitorRepo.getMetrics(id, rangeStart, d24h, d7d, d30d);
+
+    const totalChecks = rangeAggregate._count.id;
+    const failedChecks = Math.max(0, totalChecks - rangeSuccessCount);
+    const rangeUptime =
+      totalChecks > 0 ? Number(((rangeSuccessCount / totalChecks) * 100).toFixed(2)) : 100;
+
+    return {
+      monitorId: id,
+      range,
+      uptime24h,
+      uptime7d,
+      uptime30d,
+      avgResponseTime24h:
+        responseTimeStats._avg.responseTimeMs !== null
+          ? Math.round(responseTimeStats._avg.responseTimeMs)
+          : 0,
       minResponseTime24h: responseTimeStats._min.responseTimeMs ?? 0,
       maxResponseTime24h: responseTimeStats._max.responseTimeMs ?? 0,
-      history: history.map((h) => ({
-        timestamp: h.checkedAt.toISOString(),
-        responseTimeMs: h.responseTimeMs,
-        isSuccess: h.isSuccess,
-        statusCode: h.statusCode,
-      })),
+      rangeStats: {
+        range,
+        totalChecks,
+        successfulChecks: rangeSuccessCount,
+        failedChecks,
+        uptime: rangeUptime,
+        avgResponseTimeMs:
+          rangeAggregate._avg.responseTimeMs !== null
+            ? Math.round(rangeAggregate._avg.responseTimeMs)
+            : 0,
+        minResponseTimeMs: rangeAggregate._min.responseTimeMs ?? 0,
+        maxResponseTimeMs: rangeAggregate._max.responseTimeMs ?? 0,
+        bucketSeconds,
+        startAt: rangeAggregate._min.checkedAt ? rangeAggregate._min.checkedAt.toISOString() : null,
+        endAt: rangeAggregate._max.checkedAt ? rangeAggregate._max.checkedAt.toISOString() : null,
+      },
+      history,
     };
   }
 }
